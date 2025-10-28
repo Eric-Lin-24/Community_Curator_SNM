@@ -1,0 +1,21 @@
+{
+  "name": "community-curator-electron",
+  "version": "1.0.0",
+  "description": "Community Curator - WhatsApp Document Management for Electron",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron ."
+  },
+  "keywords": [
+    "electron",
+    "whatsapp",
+    "document-management",
+    "community"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^27.0.0"
+  }
+}
