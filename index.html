@@ -51,20 +51,6 @@
           <span>Forms</span>
         </button>
 
-        <button class="nav-item" data-view="responses" onclick="navigateTo('responses')">
-          <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-          </svg>
-          <span>Responses</span>
-        </button>
-
-        <button class="nav-item" data-view="sharepoint" onclick="navigateTo('sharepoint')">
-          <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-          </svg>
-          <span>SharePoint</span>
-        </button>
-
         <div class="nav-divider"></div>
 
         <button class="nav-item" data-view="settings" onclick="navigateTo('settings')">
@@ -94,6 +80,11 @@
           <h2 id="view-title" class="header-title">Dashboard</h2>
           <p id="view-subtitle" class="header-subtitle">Overview of your community management platform</p>
         </div>
+        <button class="help-button" onclick="showHelpGuide()" title="Help & Quick Start Guide">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </button>
       </header>
 
       <main id="content" class="content">
@@ -112,4 +103,3 @@
   <script src="renderer.js"></script>
 </body>
 </html>
-
