@@ -45,24 +45,116 @@ const MicrosoftGraphAPI = {
   baseUrl: 'https://graph.microsoft.com/v1.0',
 
   async authenticateWithMicrosoft() {
-    console.log('Microsoft authentication would be triggered here');
-    alert('Microsoft authentication will be implemented with MSAL library. You will sign in with your Microsoft 365 account.');
+    try {
+      console.log('Starting Microsoft authentication...');
+      const result = await window.electronAPI.login();
 
-    AppState.isAuthenticated = true;
-    AppState.userProfile = {
-      name: 'Demo User',
-      email: 'user@organization.com'
-    };
+      if (result.success) {
+        console.log('Authentication window opened, waiting for response...');
+        showNotification('Authentication in progress...', 'info');
+      }
+    } catch (error) {
+      console.error('Login error:', error);
+      showNotification('Login failed: ' + error.message, 'error');
+    }
+  },
 
-    renderApp();
+  async checkAuthentication() {
+    try {
+      const token = await window.electronAPI.getAccessToken();
+
+      if (token) {
+        AppState.accessToken = token;
+        AppState.isAuthenticated = true;
+
+        // Fetch user profile
+        await this.getUserProfile();
+
+        console.log('User authenticated:', AppState.userProfile);
+        showNotification('Successfully logged in!', 'success');
+        renderApp();
+      } else {
+        AppState.isAuthenticated = false;
+        AppState.accessToken = null;
+        AppState.userProfile = null;
+      }
+    } catch (error) {
+      console.error('Auth check error:', error);
+    }
+  },
+
+  async logout() {
+    try {
+      await window.electronAPI.logout();
+      AppState.isAuthenticated = false;
+      AppState.accessToken = null;
+      AppState.userProfile = null;
+      AppState.documents = [];
+      AppState.microsoftForms = [];
+
+      showNotification('Logged out successfully', 'success');
+      renderApp();
+    } catch (error) {
+      console.error('Logout error:', error);
+      showNotification('Logout failed', 'error');
+    }
+  },
+
+  async getUserProfile() {
+    if (!AppState.accessToken) return null;
+
+    try {
+      const response = await fetch(`${this.baseUrl}/me`, {
+        headers: {
+          'Authorization': `Bearer ${AppState.accessToken}`
+        }
+      });
+
+      if (response.ok) {
+        const profile = await response.json();
+        AppState.userProfile = {
+          name: profile.displayName || profile.userPrincipalName,
+          email: profile.mail || profile.userPrincipalName
+        };
+        return AppState.userProfile;
+      } else {
+        throw new Error('Failed to fetch user profile');
+      }
+    } catch (error) {
+      console.error('Error fetching user profile:', error);
+      return null;
+    }
   },
 
   async getForms() {
-    if (!AppState.isAuthenticated) {
+    if (!AppState.isAuthenticated || !AppState.accessToken) {
       console.log('Not authenticated');
       return [];
     }
 
+    try {
+      // Microsoft Forms API endpoint
+      const response = await fetch(`${this.baseUrl}/me/drive/root/children?$filter=folder ne null`, {
+        headers: {
+          'Authorization': `Bearer ${AppState.accessToken}`
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        // For now, return demo data as Forms API requires special permissions
+        return this.getDemoForms();
+      } else {
+        console.log('Using demo forms data');
+        return this.getDemoForms();
+      }
+    } catch (error) {
+      console.error('Error fetching forms:', error);
+      return this.getDemoForms();
+    }
+  },
+
+  getDemoForms() {
     return [
       {
         id: 'form_1',
@@ -95,6 +187,41 @@ const MicrosoftGraphAPI = {
         isAcceptingResponses: false
       }
     ];
+  },
+
+  async getSharePointFiles() {
+    if (!AppState.isAuthenticated || !AppState.accessToken) {
+      console.log('Not authenticated');
+      return [];
+    }
+
+    try {
+      // Get user's OneDrive files (SharePoint personal)
+      const response = await fetch(`${this.baseUrl}/me/drive/root/children`, {
+        headers: {
+          'Authorization': `Bearer ${AppState.accessToken}`
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        return data.value.map(file => ({
+          id: file.id,
+          title: file.name,
+          content: file.name,
+          source: 'sharepoint',
+          created_at: file.createdDateTime,
+          updated_at: file.lastModifiedDateTime,
+          webUrl: file.webUrl,
+          size: file.size
+        }));
+      } else {
+        throw new Error('Failed to fetch SharePoint files');
+      }
+    } catch (error) {
+      console.error('Error fetching SharePoint files:', error);
+      return [];
+    }
   },
 
   async getFormResponses(formId) {
@@ -1208,7 +1335,7 @@ function renderScheduling() {
           ${pendingMessages.length === 0 ? `
             <div class="text-center py-8 text-gray-500">
               <svg class="w-12 h-12 mx-auto mb-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 01-2 2z" />
               </svg>
               <p class="text-sm">No pending messages</p>
               <button
@@ -1225,6 +1352,7 @@ function renderScheduling() {
                   <div class="p-3 bg-orange-50 text-orange-600 rounded-lg">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                    </svg>
                   </div>
                   <div class="flex-1 min-w-0">
                     <div class="flex items-start justify-between mb-2">
@@ -1347,7 +1475,7 @@ function renderForms() {
 
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
           <svg class="w-16 h-16 mx-auto mb-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
           </svg>
           <h3 class="text-xl font-semibold text-gray-800 mb-2">Connect to Microsoft 365</h3>
           <p class="text-gray-600 mb-4">Sign in to access your Microsoft Forms</p>
@@ -1645,7 +1773,7 @@ function renderSettings() {
               <div class="flex items-center gap-4 mb-4">
                 <div class="p-3 bg-blue-50 rounded-full">
                   <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7  0 00-7 7h14a7 7 0 00-7-7z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                   </svg>
                 </div>
                 <div>
@@ -1684,6 +1812,7 @@ function renderSettings() {
                 <div class="p-3 bg-green-50 rounded-full">
                   <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                  </svg>
                 </div>
                 <div>
                   <p class="font-medium text-gray-800">WhatsApp Business</p>
@@ -1998,7 +2127,7 @@ function showHelpGuide() {
                   <div class="flex items-start gap-3">
                     <div class="p-2 bg-green-50 rounded-lg flex-shrink-0">
                       <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h6M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 01-2 2z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h6M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 01-2 2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10" />
                     </div>
                     <div>
                       <h5 class="font-medium text-gray-800 mb-1">Message Scheduling</h5>
@@ -2165,6 +2294,20 @@ window.closeHelpGuide = closeHelpGuide;
 document.addEventListener('DOMContentLoaded', async () => {
   console.log('App initializing...');
 
+  // Check for existing authentication
+  await MicrosoftGraphAPI.checkAuthentication();
+
+  // Setup auth event listeners
+  window.electronAPI.onAuthSuccess(() => {
+    console.log('Authentication successful!');
+    MicrosoftGraphAPI.checkAuthentication();
+  });
+
+  window.electronAPI.onAuthError((error) => {
+    console.error('Authentication error:', error);
+    showNotification('Authentication failed: ' + error, 'error');
+  });
+
   // Add some sample data for demonstration
   AppState.scheduledMessages.push({
     id: generateId(),
@@ -2197,3 +2340,61 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Render the app
   renderApp();
 });
+
+// ============================================
+// NOTIFICATION SYSTEM
+// ============================================
+function showNotification(message, type = 'info') {
+  const colors = {
+    success: 'bg-green-500',
+    error: 'bg-red-500',
+    info: 'bg-blue-500',
+    warning: 'bg-yellow-500'
+  };
+
+  const color = colors[type] || colors.info;
+
+  const notification = document.createElement('div');
+  notification.className = `fixed top-4 right-4 ${color} text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-fade-in`;
+  notification.textContent = message;
+
+  document.body.appendChild(notification);
+
+  setTimeout(() => {
+    notification.classList.add('animate-fade-out');
+    setTimeout(() => notification.remove(), 300);
+  }, 3000);
+}
+
+// ============================================
+// REFRESH SHAREPOINT DOCUMENTS
+// ============================================
+async function refreshSharePointDocs() {
+  if (!AppState.isAuthenticated) {
+    showNotification('Please sign in with Microsoft 365 first', 'warning');
+    return;
+  }
+
+  showNotification('Syncing SharePoint documents...', 'info');
+
+  try {
+    const files = await MicrosoftGraphAPI.getSharePointFiles();
+    AppState.documents = files;
+    renderDocuments();
+    showNotification(`Synced ${files.length} documents from SharePoint`, 'success');
+  } catch (error) {
+    console.error('Error syncing SharePoint:', error);
+    showNotification('Failed to sync SharePoint documents', 'error');
+  }
+}
+
+// Make functions globally available
+window.MicrosoftGraphAPI = MicrosoftGraphAPI;
+window.refreshSharePointDocs = refreshSharePointDocs;
+window.showNotification = showNotification;
+window.signOut = async function() {
+  if (confirm('Are you sure you want to sign out?')) {
+    await MicrosoftGraphAPI.logout();
+  }
+};
+
