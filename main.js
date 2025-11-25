@@ -3,12 +3,14 @@ const path = require('path');
 const { PublicClientApplication } = require('@azure/msal-node');
 const SimpleStore = require('./simpleStore');
 const http = require('http');
+const { google } = require('googleapis');
 
 // Disable hardware acceleration to fix GPU errors on Windows
 app.disableHardwareAcceleration();
 
 const store = new SimpleStore();
 let authServer = null;
+let googleAuthServer = null;
 
 // MSAL Configuration
 const msalConfig = {
@@ -25,6 +27,24 @@ const SCOPES = [
   'Files.ReadWrite',
   'offline_access'
 ];
+
+// Google OAuth Configuration
+// IMPORTANT: Replace these with your actual Google OAuth credentials
+// Get them from: https://console.cloud.google.com/apis/credentials
+const GOOGLE_CLIENT_ID = '811017499008-52eoerm7gjaio44pm94k7n71p37l2tv4.apps.googleusercontent.com';
+const GOOGLE_CLIENT_SECRET = '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';
+const GOOGLE_REDIRECT_URI = 'http://localhost:3001';
+const GOOGLE_SCOPES = [
+  'https://www.googleapis.com/auth/drive.readonly',
+  'https://www.googleapis.com/auth/userinfo.email',
+  'https://www.googleapis.com/auth/userinfo.profile'
+];
+
+const oauth2Client = new google.auth.OAuth2(
+  GOOGLE_CLIENT_ID,
+  GOOGLE_CLIENT_SECRET,
+  GOOGLE_REDIRECT_URI
+);
 
 // Create a local HTTP server to handle OAuth redirect
 function createAuthServer() {
@@ -196,6 +216,174 @@ function createAuthServer() {
   });
 }
 
+// Create a local HTTP server to handle Google OAuth redirect
+function createGoogleAuthServer() {
+  return new Promise((resolve, reject) => {
+    const server = http.createServer((req, res) => {
+      const url = new URL(req.url, `http://localhost:3001`);
+
+      if (url.pathname === '/') {
+        const code = url.searchParams.get('code');
+        const error = url.searchParams.get('error');
+
+        if (code) {
+          // Success page
+          res.writeHead(200, { 'Content-Type': 'text/html' });
+          res.end(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <title>Google Drive Connected</title>
+              <style>
+                body {
+                  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  height: 100vh;
+                  margin: 0;
+                  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                }
+                .container {
+                  text-align: center;
+                  background: white;
+                  padding: 40px;
+                  border-radius: 12px;
+                  box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+                }
+                .success-icon {
+                  width: 80px;
+                  height: 80px;
+                  margin: 0 auto 20px;
+                  background: #10b981;
+                  border-radius: 50%;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                }
+                .checkmark {
+                  color: white;
+                  font-size: 50px;
+                }
+                h1 { color: #1f2937; margin: 0 0 10px 0; }
+                p { color: #6b7280; margin: 0; }
+              </style>
+            </head>
+            <body>
+              <div class="container">
+                <div class="success-icon">
+                  <span class="checkmark">✓</span>
+                </div>
+                <h1>Google Drive Connected!</h1>
+                <p>You can close this window and return to the app.</p>
+              </div>
+              <script>
+                setTimeout(() => window.close(), 2000);
+              </script>
+            </body>
+            </html>
+          `);
+
+          // Handle the auth code
+          handleGoogleAuthCode(code).then(() => {
+            setTimeout(() => {
+              server.close();
+              googleAuthServer = null;
+            }, 3000);
+          });
+        } else if (error) {
+          // Error page
+          res.writeHead(200, { 'Content-Type': 'text/html' });
+          res.end(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <title>Authentication Failed</title>
+              <style>
+                body {
+                  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  height: 100vh;
+                  margin: 0;
+                  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+                }
+                .container {
+                  text-align: center;
+                  background: white;
+                  padding: 40px;
+                  border-radius: 12px;
+                  box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+                  max-width: 500px;
+                }
+                .error-icon {
+                  width: 80px;
+                  height: 80px;
+                  margin: 0 auto 20px;
+                  background: #ef4444;
+                  border-radius: 50%;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                }
+                .x-mark {
+                  color: white;
+                  font-size: 50px;
+                  font-weight: bold;
+                }
+                h1 { color: #1f2937; margin: 0 0 10px 0; }
+                p { color: #6b7280; margin: 0; font-size: 14px; }
+              </style>
+            </head>
+            <body>
+              <div class="container">
+                <div class="error-icon">
+                  <span class="x-mark">✕</span>
+                </div>
+                <h1>Authentication Failed</h1>
+                <p>${error || 'Unknown error occurred'}</p>
+              </div>
+              <script>
+                setTimeout(() => window.close(), 5000);
+              </script>
+            </body>
+            </html>
+          `);
+
+          BrowserWindow.getAllWindows()[0]?.webContents.send('google-auth-error', error);
+
+          setTimeout(() => {
+            server.close();
+            googleAuthServer = null;
+          }, 6000);
+        }
+      } else {
+        res.writeHead(404);
+        res.end();
+      }
+    });
+
+    server.listen(3001, 'localhost', () => {
+      console.log('Google Auth server listening on http://localhost:3001');
+      resolve(server);
+    });
+
+    server.on('error', (err) => {
+      if (err.code === 'EADDRINUSE') {
+        console.log('Port 3001 already in use, trying to close existing server...');
+        setTimeout(() => {
+          server.listen(3001, 'localhost', () => {
+            resolve(server);
+          });
+        }, 1000);
+      } else {
+        reject(err);
+      }
+    });
+  });
+}
+
 function createWindow() {
   const mainWindow = new BrowserWindow({
     width: 1400,
@@ -303,6 +491,178 @@ ipcMain.handle('get-access-token', async () => {
 ipcMain.handle('msal-logout', async () => {
   store.delete('accessToken');
   store.delete('account');
+  return true;
+});
+
+// ============================================
+// GOOGLE OAUTH HANDLERS
+// ============================================
+
+async function handleGoogleAuthCode(code) {
+  try {
+    const { tokens } = await oauth2Client.getToken(code);
+    oauth2Client.setCredentials(tokens);
+
+    // Store tokens
+    store.set('googleAccessToken', tokens.access_token);
+    store.set('googleRefreshToken', tokens.refresh_token);
+    store.set('googleTokenExpiry', tokens.expiry_date);
+
+    // Get user profile
+    const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
+    const userInfo = await oauth2.userinfo.get();
+
+    store.set('googleUserInfo', {
+      email: userInfo.data.email,
+      name: userInfo.data.name,
+      picture: userInfo.data.picture
+    });
+
+    // Notify renderer process
+    const mainWindow = BrowserWindow.getAllWindows()[0];
+    if (mainWindow) {
+      mainWindow.webContents.send('google-auth-success', {
+        email: userInfo.data.email,
+        name: userInfo.data.name
+      });
+      mainWindow.focus();
+    }
+  } catch (error) {
+    console.error('Google Auth error:', error);
+    BrowserWindow.getAllWindows()[0]?.webContents.send('google-auth-error', error.message);
+  }
+}
+
+// Handle Google login request from renderer
+ipcMain.handle('google-login', async () => {
+  try {
+    // Start the local auth server if not already running
+    if (!googleAuthServer) {
+      googleAuthServer = await createGoogleAuthServer();
+    }
+
+    const authUrl = oauth2Client.generateAuthUrl({
+      access_type: 'offline',
+      scope: GOOGLE_SCOPES,
+      prompt: 'consent'
+    });
+
+    // Open in the user's default browser
+    const { shell } = require('electron');
+    await shell.openExternal(authUrl);
+
+    return { success: true };
+  } catch (error) {
+    console.error('Google Login error:', error);
+
+    // Clean up server on error
+    if (googleAuthServer) {
+      googleAuthServer.close();
+      googleAuthServer = null;
+    }
+
+    throw error;
+  }
+});
+
+// Get stored Google access token (with refresh if expired)
+ipcMain.handle('get-google-access-token', async () => {
+  const accessToken = store.get('googleAccessToken');
+  const refreshToken = store.get('googleRefreshToken');
+  const expiry = store.get('googleTokenExpiry');
+
+  if (!accessToken || !refreshToken) {
+    return null;
+  }
+
+  // Check if token is expired
+  if (expiry && Date.now() >= expiry) {
+    try {
+      // Refresh the token
+      oauth2Client.setCredentials({
+        refresh_token: refreshToken
+      });
+
+      const { credentials } = await oauth2Client.refreshAccessToken();
+
+      // Update stored tokens
+      store.set('googleAccessToken', credentials.access_token);
+      store.set('googleTokenExpiry', credentials.expiry_date);
+
+      return credentials.access_token;
+    } catch (error) {
+      console.log('Token refresh failed:', error.message);
+      return null;
+    }
+  }
+
+  return accessToken;
+});
+
+// Get Google user info
+ipcMain.handle('get-google-user-info', async () => {
+  return store.get('googleUserInfo') || null;
+});
+
+// Get Google Drive files
+ipcMain.handle('get-google-drive-files', async () => {
+  try {
+    // Get access token directly from storage
+    let accessToken = store.get('googleAccessToken');
+    const refreshToken = store.get('googleRefreshToken');
+    const expiry = store.get('googleTokenExpiry');
+
+    if (!accessToken || !refreshToken) {
+      return [];
+    }
+
+    // Check if token is expired and refresh if needed
+    if (expiry && Date.now() >= expiry) {
+      try {
+        oauth2Client.setCredentials({
+          refresh_token: refreshToken
+        });
+
+        const { credentials } = await oauth2Client.refreshAccessToken();
+
+        // Update stored tokens
+        store.set('googleAccessToken', credentials.access_token);
+        store.set('googleTokenExpiry', credentials.expiry_date);
+
+        accessToken = credentials.access_token;
+      } catch (error) {
+        console.log('Token refresh failed:', error.message);
+        return [];
+      }
+    }
+
+    // Set credentials and fetch files
+    oauth2Client.setCredentials({
+      access_token: accessToken
+    });
+
+    const drive = google.drive({ version: 'v3', auth: oauth2Client });
+
+    const response = await drive.files.list({
+      pageSize: 100,
+      fields: 'files(id, name, mimeType, createdTime, modifiedTime, size, webViewLink, iconLink)',
+      orderBy: 'modifiedTime desc'
+    });
+
+    return response.data.files || [];
+  } catch (error) {
+    console.error('Error fetching Google Drive files:', error);
+    throw error;
+  }
+});
+
+// Logout from Google
+ipcMain.handle('google-logout', async () => {
+  store.delete('googleAccessToken');
+  store.delete('googleRefreshToken');
+  store.delete('googleTokenExpiry');
+  store.delete('googleUserInfo');
+  oauth2Client.setCredentials({});
   return true;
 });
 
