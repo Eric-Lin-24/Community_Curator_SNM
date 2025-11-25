@@ -16,7 +16,10 @@ const AppState = {
   accessToken: null,
   userProfile: null,
   whatsappConnected: false,
-  whatsappPhone: ''
+  whatsappPhone: '',
+  googleDriveConnected: false,
+  googleDriveEmail: '',
+  activeDocumentSource: 'onedrive' // 'onedrive' or 'googledrive'
 };
 
 // ============================================
@@ -39,7 +42,7 @@ function formatDateTime(dateString) {
 }
 
 // ============================================
-// MICROSOFT GRAPH API
+// MICROSOFT GRAPH API (OneDrive)
 // ============================================
 const MicrosoftGraphAPI = {
   baseUrl: 'https://graph.microsoft.com/v1.0',
@@ -100,29 +103,68 @@ const MicrosoftGraphAPI = {
     }
   },
 
-  async getUserProfile() {
-    if (!AppState.accessToken) return null;
+  async graphFetch(path, options = {}) {
+    // Ensure we have a valid access token from main process
+    const token = await window.electronAPI.getAccessToken();
+    if (!token) {
+      throw new Error('No access token available — please sign in');
+    }
 
-    try {
-      const response = await fetch(`${this.baseUrl}/me`, {
-        headers: {
-          'Authorization': `Bearer ${AppState.accessToken}`
-        }
-      });
-
-      if (response.ok) {
-        const profile = await response.json();
-        AppState.userProfile = {
-          name: profile.displayName || profile.userPrincipalName,
-          email: profile.mail || profile.userPrincipalName
-        };
-        return AppState.userProfile;
-      } else {
-        throw new Error('Failed to fetch user profile');
+    const url = this.baseUrl + path;
+    const fetchOptions = Object.assign({
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/json'
       }
+    }, options);
+
+    const res = await fetch(url, fetchOptions);
+
+    if (!res.ok) {
+      // Try to parse Graph JSON error for better debugging
+      let bodyText = await res.text();
+      let parsed = bodyText;
+      try { parsed = JSON.parse(bodyText); } catch (_) { /* leave as text */ }
+
+      // If 401, surface auth error so UI can prompt re-login
+      if (res.status === 401) {
+        const err = new Error('Unauthorized: Your session has expired. Please sign in again.');
+        err.status = res.status;
+        err.body = parsed;
+        throw err;
+      }
+
+      // Check for admin consent required
+      const errorMessage = (parsed && parsed.error && parsed.error.message) ? parsed.error.message.toLowerCase() : '';
+      if (errorMessage.includes('admin') && errorMessage.includes('consent')) {
+        const err = new Error('Admin consent required: This app needs administrator approval. Please contact your IT admin to grant consent for this application.');
+        err.status = res.status;
+        err.body = parsed;
+        err.needsAdminConsent = true;
+        throw err;
+      }
+
+      const err = new Error(`Microsoft Graph request failed: ${res.status} ${res.statusText} - ${JSON.stringify(parsed)}`);
+      err.status = res.status;
+      err.body = parsed;
+      throw err;
+    }
+
+    return res.json();
+  },
+
+  async getUserProfile() {
+    try {
+      const profile = await this.graphFetch('/me');
+      AppState.userProfile = {
+        name: profile.displayName || profile.userPrincipalName,
+        email: profile.mail || profile.userPrincipalName
+      };
+      return AppState.userProfile;
     } catch (error) {
       console.error('Error fetching user profile:', error);
-      return null;
+      throw error;
     }
   },
 
@@ -189,37 +231,40 @@ const MicrosoftGraphAPI = {
     ];
   },
 
-  async getSharePointFiles() {
-    if (!AppState.isAuthenticated || !AppState.accessToken) {
+  async getOneDriveFiles() {
+    if (!AppState.isAuthenticated) {
       console.log('Not authenticated');
       return [];
     }
 
     try {
-      // Get user's OneDrive files (SharePoint personal)
-      const response = await fetch(`${this.baseUrl}/me/drive/root/children`, {
-        headers: {
-          'Authorization': `Bearer ${AppState.accessToken}`
-        }
-      });
+      // Get user's OneDrive files
+      const path = '/me/drive/root/children';
+      const data = await this.graphFetch(path);
 
-      if (response.ok) {
-        const data = await response.json();
-        return data.value.map(file => ({
-          id: file.id,
-          title: file.name,
-          content: file.name,
-          source: 'sharepoint',
-          created_at: file.createdDateTime,
-          updated_at: file.lastModifiedDateTime,
-          webUrl: file.webUrl,
-          size: file.size
-        }));
-      } else {
-        throw new Error('Failed to fetch SharePoint files');
-      }
+      return (data.value || []).map(file => ({
+        id: file.id,
+        title: file.name,
+        content: file.name,
+        source: 'onedrive',
+        created_at: file.createdDateTime,
+        updated_at: file.lastModifiedDateTime,
+        webUrl: file.webUrl,
+        size: file.size,
+        mimeType: file.file ? file.file.mimeType : 'folder'
+      }));
     } catch (error) {
-      console.error('Error fetching SharePoint files:', error);
+      console.error('Error fetching OneDrive files:', error);
+
+      // Surface detailed message to the user
+      const message = error.needsAdminConsent
+        ? 'Admin consent required. Please contact your IT administrator.'
+        : (error && error.body && error.body.error && error.body.error.message)
+        ? error.body.error.message
+        : error.message || String(error);
+
+      showNotification('Failed to fetch OneDrive files: ' + message, 'error');
+
       return [];
     }
   },
@@ -391,10 +436,186 @@ const MicrosoftGraphAPI = {
 };
 
 // ============================================
+// GOOGLE DRIVE API
+// ============================================
+const GoogleDriveAPI = {
+  async authenticateWithGoogle() {
+    try {
+      console.log('Starting Google Drive authentication...');
+      // Simulated for now - in a real app this would use Google OAuth
+      showNotification('Google Drive authentication coming soon...', 'info');
+
+      // For demo purposes, simulate connection
+      const email = prompt('Enter your Google email (demo):');
+      if (email) {
+        AppState.googleDriveConnected = true;
+        AppState.googleDriveEmail = email;
+        showNotification('Successfully connected to Google Drive!', 'success');
+        renderApp();
+      }
+    } catch (error) {
+      console.error('Google Drive login error:', error);
+      showNotification('Google Drive login failed: ' + error.message, 'error');
+    }
+  },
+
+  async logout() {
+    try {
+      AppState.googleDriveConnected = false;
+      AppState.googleDriveEmail = '';
+
+      // If active source is Google Drive, switch to OneDrive or clear documents
+      if (AppState.activeDocumentSource === 'googledrive') {
+        AppState.activeDocumentSource = 'onedrive';
+        AppState.documents = AppState.documents.filter(d => d.source !== 'googledrive');
+      }
+
+      showNotification('Disconnected from Google Drive', 'success');
+      renderApp();
+    } catch (error) {
+      console.error('Logout error:', error);
+      showNotification('Logout failed', 'error');
+    }
+  },
+
+  async getGoogleDriveFiles() {
+    if (!AppState.googleDriveConnected) {
+      console.log('Not authenticated with Google Drive');
+      return [];
+    }
+
+    try {
+      // Simulated Google Drive files for demo
+      // In a real app, this would call the Google Drive API
+      showNotification('Loading Google Drive files...', 'info');
+
+      const demoFiles = [
+        {
+          id: 'gdrive_' + generateId(),
+          title: 'Community Guidelines.pdf',
+          content: 'Guidelines for community members and volunteers',
+          source: 'googledrive',
+          created_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
+          updated_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+          webUrl: 'https://drive.google.com/file/sample1',
+          size: 524288,
+          mimeType: 'application/pdf'
+        },
+        {
+          id: 'gdrive_' + generateId(),
+          title: 'Event Planning Template.docx',
+          content: 'Template for planning community events',
+          source: 'googledrive',
+          created_at: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
+          updated_at: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+          webUrl: 'https://drive.google.com/file/sample2',
+          size: 1048576,
+          mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        },
+        {
+          id: 'gdrive_' + generateId(),
+          title: 'Volunteer Schedule 2024.xlsx',
+          content: 'Schedule for all volunteers throughout the year',
+          source: 'googledrive',
+          created_at: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString(),
+          updated_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+          webUrl: 'https://drive.google.com/file/sample3',
+          size: 2097152,
+          mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        },
+        {
+          id: 'gdrive_' + generateId(),
+          title: 'Fundraising Report Q4.pdf',
+          content: 'Quarterly fundraising performance and analysis',
+          source: 'googledrive',
+          created_at: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString(),
+          updated_at: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+          webUrl: 'https://drive.google.com/file/sample4',
+          size: 3145728,
+          mimeType: 'application/pdf'
+        }
+      ];
+
+      return demoFiles;
+    } catch (error) {
+      console.error('Error fetching Google Drive files:', error);
+      showNotification('Failed to fetch Google Drive files: ' + error.message, 'error');
+      return [];
+    }
+  }
+};
+
+// ============================================
 // ACTION HANDLERS (Stub functions for buttons)
 // ============================================
-function refreshSharePointDocs() {
-  alert('Refreshing SharePoint documents...');
+function switchDocumentSource(source) {
+  if (source === 'googledrive' && !AppState.googleDriveConnected) {
+    showNotification('Please connect to Google Drive first in Settings', 'warning');
+    navigateTo('settings');
+    return;
+  }
+
+  if (source === 'onedrive' && !AppState.isAuthenticated) {
+    showNotification('Please sign in with Microsoft 365 first in Settings', 'warning');
+    navigateTo('settings');
+    return;
+  }
+
+  AppState.activeDocumentSource = source;
+
+  // Refresh documents for the selected source
+  if (source === 'onedrive') {
+    refreshOneDriveDocs();
+  } else if (source === 'googledrive') {
+    refreshGoogleDriveDocs();
+  }
+}
+
+async function refreshGoogleDriveDocs() {
+  if (!AppState.googleDriveConnected) {
+    showNotification('Please connect to Google Drive first', 'warning');
+    return;
+  }
+
+  showNotification('Syncing Google Drive files...', 'info');
+
+  try {
+    const files = await GoogleDriveAPI.getGoogleDriveFiles();
+    // Replace documents with Google Drive files
+    AppState.documents = files;
+    renderDocuments();
+    showNotification(`Synced ${files.length} files from Google Drive`, 'success');
+  } catch (error) {
+    console.error('Error syncing Google Drive:', error);
+    showNotification('Failed to sync Google Drive files', 'error');
+  }
+}
+
+function refreshCloudDocs() {
+  if (AppState.activeDocumentSource === 'googledrive') {
+    refreshGoogleDriveDocs();
+  } else {
+    refreshOneDriveDocs();
+  }
+}
+
+async function refreshOneDriveDocs() {
+  if (!AppState.isAuthenticated) {
+    showNotification('Please sign in with Microsoft 365 first', 'warning');
+    return;
+  }
+
+  showNotification('Syncing OneDrive files...', 'info');
+
+  try {
+    const files = await MicrosoftGraphAPI.getOneDriveFiles();
+    AppState.documents = files;
+    renderDocuments();
+    showNotification(`Synced ${files.length} files from OneDrive`, 'success');
+  } catch (error) {
+    console.error('Error syncing OneDrive:', error);
+    showNotification('Failed to sync OneDrive files', 'error');
+  }
 }
 
 function showModal(type) {
@@ -623,7 +844,7 @@ function renderApp() {
   // Update header with consistent titles
   const titles = {
     dashboard: { title: 'Dashboard', subtitle: 'Welcome back! Here\'s an overview of your community platform' },
-    documents: { title: 'Documents', subtitle: 'Manage and sync your SharePoint documents' },
+    documents: { title: 'Documents', subtitle: 'Manage and sync your OneDrive files' },
     scheduling: { title: 'Message Scheduling', subtitle: 'Schedule and manage automated messages' },
     forms: { title: 'Microsoft Forms', subtitle: 'Create forms and view responses' },
     settings: { title: 'Settings', subtitle: 'Configure your application preferences' }
@@ -872,26 +1093,34 @@ function renderDocuments() {
   const content = document.getElementById('content');
 
   // Documents only come from SharePoint
-  if (!AppState.isAuthenticated) {
+  if (!AppState.isAuthenticated && !AppState.googleDriveConnected) {
     content.innerHTML = `
       <div class="space-y-6">
         <div>
           <h3 class="text-2xl font-bold text-gray-800">Documents</h3>
-          <p class="text-gray-600">Access your SharePoint documents</p>
+          <p class="text-gray-600">Access your cloud documents</p>
         </div>
 
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
           <svg class="w-16 h-16 mx-auto mb-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
-          <h3 class="text-xl font-semibold text-gray-800 mb-2">Connect to Microsoft 365</h3>
-          <p class="text-gray-600 mb-4">Sign in to access your SharePoint documents</p>
-          <button
-            onclick="MicrosoftGraphAPI.authenticateWithMicrosoft()"
-            class="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            Sign in with Microsoft
-          </button>
+          <h3 class="text-xl font-semibold text-gray-800 mb-2">Connect to Cloud Storage</h3>
+          <p class="text-gray-600 mb-4">Sign in to access your documents from OneDrive or Google Drive</p>
+          <div class="flex gap-3 justify-center">
+            <button
+              onclick="MicrosoftGraphAPI.authenticateWithMicrosoft()"
+              class="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              Sign in with Microsoft
+            </button>
+            <button
+              onclick="GoogleDriveAPI.authenticateWithGoogle()"
+              class="px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+            >
+              Sign in with Google
+            </button>
+          </div>
         </div>
       </div>
     `;
@@ -901,6 +1130,7 @@ function renderDocuments() {
   const documents = AppState.documents;
   const searchQuery = AppState.documentSearchQuery || '';
   const selectedDocs = AppState.selectedDocuments || [];
+  const activeSource = AppState.activeDocumentSource || 'onedrive';
 
   // Filter documents
   let filteredDocuments = documents;
@@ -911,27 +1141,64 @@ function renderDocuments() {
     );
   }
 
+  // Determine provider display info
+  const isOneDrive = activeSource === 'onedrive';
+  const providerName = isOneDrive ? 'OneDrive' : 'Google Drive';
+  const syncButtonColor = isOneDrive ? 'bg-blue-600 hover:bg-blue-700' : 'bg-red-600 hover:bg-red-700';
+
   content.innerHTML = `
     <div class="space-y-6">
+      <!-- Storage Provider Switcher -->
+      <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+        <div class="flex items-center justify-between">
+          <div>
+            <h3 class="font-semibold text-gray-800 mb-1">Storage Provider</h3>
+            <p class="text-sm text-gray-600">Choose where to manage your documents</p>
+          </div>
+          <div class="flex gap-2 bg-gray-100 p-1 rounded-lg">
+            <button
+              onclick="switchDocumentSource('onedrive')"
+              class="px-4 py-2 rounded-md font-medium text-sm transition-colors ${
+                activeSource === 'onedrive'
+                  ? 'bg-white text-blue-600 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-800'
+              }"
+            >
+              OneDrive
+            </button>
+            <button
+              onclick="switchDocumentSource('googledrive')"
+              class="px-4 py-2 rounded-md font-medium text-sm transition-colors ${
+                activeSource === 'googledrive'
+                  ? 'bg-white text-red-600 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-800'
+              }"
+            >
+              Google Drive
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- Header -->
       <div class="flex items-center justify-between">
         <div>
-          <h3 class="text-2xl font-bold text-gray-800">SharePoint Documents</h3>
-          <p class="text-gray-600">Your documents synced from SharePoint</p>
+          <h3 class="text-2xl font-bold text-gray-800">${providerName} Files</h3>
+          <p class="text-gray-600">Your files synced from ${providerName}</p>
         </div>
         <div class="flex gap-2">
           <button
-            onclick="refreshSharePointDocs()"
-            class="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+            onclick="refreshCloudDocs()"
+            class="flex items-center gap-2 px-4 py-2 ${syncButtonColor} text-white rounded-lg transition-colors"
           >
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
-            <span>Sync SharePoint</span>
+            <span>Sync ${providerName}</span>
           </button>
           <button
             onclick="showNewDocumentModal()"
-            class="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            class="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
           >
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
@@ -1025,12 +1292,12 @@ function renderDocuments() {
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
           <h3 class="text-xl font-semibold text-gray-800 mb-2">No documents found</h3>
-          <p class="text-gray-600 mb-4">Sync your SharePoint to see documents here</p>
+          <p class="text-gray-600 mb-4">Sync your OneDrive or Google Drive to see documents here</p>
           <button
-            onclick="refreshSharePointDocs()"
+            onclick="refreshCloudDocs()"
             class="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
           >
-            Sync SharePoint
+            Sync ${providerName}
           </button>
         </div>
       ` : `
@@ -1066,7 +1333,7 @@ function renderDocuments() {
                       </svg>
                     </div>
                   </div>
-                  <span class="text-xs px-2 py-1 rounded bg-green-100 text-green-700">SharePoint</span>
+                  <span class="text-xs px-2 py-1 rounded bg-green-100 text-green-700">OneDrive</span>
                 </div>
 
                 <h4 class="font-semibold text-gray-800 mb-2">${doc.title}</h4>
@@ -1084,7 +1351,7 @@ function renderDocuments() {
                       target="_blank"
                       class="flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm text-center"
                     >
-                      Open in SharePoint
+                      Open in OneDrive
                     </a>
                   ` : `
                     <button
@@ -1217,8 +1484,8 @@ function showNewDocumentModal() {
               <path stroke-linecap="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
             </svg>
           </div>
-          <h3 class="text-xl font-semibold text-gray-900 mb-2">Create Document in SharePoint</h3>
-          <p class="text-gray-600 mb-6">Documents are managed in Microsoft SharePoint. Click below to open SharePoint and create a new document.</p>
+          <h3 class="text-xl font-semibold text-gray-900 mb-2">Create Document in OneDrive</h3>
+          <p class="text-gray-600 mb-6">Documents are managed in Microsoft OneDrive. Click below to open OneDrive and create a new document.</p>
 
           <div class="space-y-3">
             <button
@@ -1228,16 +1495,6 @@ function showNewDocumentModal() {
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
             </svg>
-              <span>Open SharePoint</span>
-            </button>
-
-            <button
-              onclick="openOneDriveNewDocument()"
-              class="w-full px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
-            >
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
-              </svg>
               <span>Open OneDrive</span>
             </button>
 
@@ -1250,7 +1507,7 @@ function showNewDocumentModal() {
             </button>
           </div>
 
-          <p class="text-xs text-gray-500 mt-4">After creating your document, click "Sync SharePoint" to see it here.</p>
+          <p class="text-xs text-gray-500 mt-4">After creating your document, click "Sync OneDrive" to see it here.</p>
         </div>
       </div>
     </div>
@@ -1280,7 +1537,7 @@ function openSharePointNewDocument() {
 
   // Show a message to remind user to sync after creating
   setTimeout(() => {
-    alert('After creating your document in SharePoint, click "Sync SharePoint" to see it in the app.');
+    alert('After creating your document in SharePoint, click "Sync OneDrive" to see it in the app.');
   }, 500);
 }
 
@@ -1295,7 +1552,7 @@ function openOneDriveNewDocument() {
 
   // Show a message to remind user to sync after creating
   setTimeout(() => {
-    alert('After creating your document in OneDrive, click "Sync SharePoint" to see it in the app.');
+    alert('After creating your document in OneDrive, click "Sync OneDrive" to see it in the app.');
   }, 500);
 }
 
@@ -1352,7 +1609,6 @@ function renderScheduling() {
                   <div class="p-3 bg-orange-50 text-orange-600 rounded-lg">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                    </svg>
                   </div>
                   <div class="flex-1 min-w-0">
                     <div class="flex items-start justify-between mb-2">
@@ -1409,7 +1665,7 @@ function renderScheduling() {
           ` : `
             <div class="space-y-3">
               ${sentMessages.map(msg => `
-                <div class="flex items-start gap-4 p-4 border border-gray-200 rounded-lg">
+                <div class="flex itemsstart gap-4 p-4 border border-gray-200 rounded-lg">
                   <div class="p-3 bg-green-50 text-green-600 rounded-lg">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
@@ -1700,7 +1956,7 @@ async function viewFormResponses(formId) {
           ${responses.length === 0 ? `
             <div class="text-center py-12 text-gray-500">
               <svg class="w-12 h-12 mx-auto mb-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414A1 1 0 006.586 13H4" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 01-2 2z" />
               </svg>
               <p class="text-sm">No responses yet</p>
             </div>
@@ -1842,6 +2098,43 @@ function renderSettings() {
             `}
           </div>
 
+          <!-- Google Drive Integration -->
+          <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <h3 class="text-lg font-semibold text-gray-800 mb-4">Google Drive Integration</h3>
+            ${AppState.googleDriveConnected ? `
+              <div class="flex items-center gap-4 mb-4">
+                <div class="p-3 bg-red-50 rounded-full">
+                  <svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </div>
+                <div>
+                  <p class="font-medium text-gray-800">Google Drive</p>
+                  <p class="text-sm text-gray-600">${AppState.googleDriveEmail}</p>
+                </div>
+              </div>
+              <div class="flex items-center gap-2 text-sm text-green-600 mb-4">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                </svg>
+                <span>Connected to Google Drive</span>
+              </div>
+              <button
+                onclick="disconnectGoogleDrive()"
+                class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+              >
+                Disconnect Google Drive
+              </button>
+            ` : `
+              <p class="text-gray-600 mb-4">Connect your Google Drive account to access and manage your files from Google Drive.</p>
+              <button
+                onclick="GoogleDriveAPI.authenticateWithGoogle()"
+                class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+              >
+                Connect Google Drive
+              </button>
+            `}
+          </div>
+
           <!-- Application Settings -->
           <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <h3 class="text-lg font-semibold text-gray-800 mb-4">Application Settings</h3>
@@ -1907,6 +2200,13 @@ function renderSettings() {
                 <span class="flex items-center gap-1 text-xs ${whatsappConnected ? 'text-green-600' : 'text-gray-400'}">
                   <div class="w-2 h-2 rounded-full ${whatsappConnected ? 'bg-green-600' : 'bg-gray-400'}"></div>
                   ${whatsappConnected ? 'Connected' : 'Disconnected'}
+                </span>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="text-sm text-gray-600">Google Drive</span>
+                <span class="flex items-center gap-1 text-xs ${AppState.googleDriveConnected ? 'text-green-600' : 'text-gray-400'}">
+                  <div class="w-2 h-2 rounded-full ${AppState.googleDriveConnected ? 'bg-green-600' : 'bg-gray-400'}"></div>
+                  ${AppState.googleDriveConnected ? 'Connected' : 'Disconnected'}
                 </span>
               </div>
             </div>
@@ -2048,6 +2348,13 @@ function disconnectWhatsApp() {
   }
 }
 
+function disconnectGoogleDrive() {
+  if (confirm('Are you sure you want to disconnect Google Drive?')) {
+    GoogleDriveAPI.logout();
+    renderSettings();
+  }
+}
+
 function signOut() {
   if (confirm('Are you sure you want to sign out?')) {
     AppState.isAuthenticated = false;
@@ -2071,7 +2378,7 @@ function showHelpGuide() {
             <div class="flex items-center gap-3">
               <div class="p-3 bg-white bg-opacity-20 rounded-lg">
                 <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                  <path stroke-linecap="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
               </div>
               <div>
                 <h3 class="text-2xl font-bold text-white">Quick Start Guide</h3>
@@ -2081,7 +2388,7 @@ function showHelpGuide() {
             <button onclick="closeHelpGuide()" class="text-white hover:bg-white hover:bg-opacity-20 rounded-lg p-2 transition-colors">
               <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-              </svg>
+            </svg>
             </button>
           </div>
         </div>
@@ -2127,7 +2434,7 @@ function showHelpGuide() {
                   <div class="flex items-start gap-3">
                     <div class="p-2 bg-green-50 rounded-lg flex-shrink-0">
                       <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h6M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 01-2 2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h6M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12" />
                     </div>
                     <div>
                       <h5 class="font-medium text-gray-800 mb-1">Message Scheduling</h5>
@@ -2220,7 +2527,7 @@ function showHelpGuide() {
                   <svg class="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
                   </svg>
-                  <p class="text-sm text-gray-600">Click <strong>"Sync SharePoint"</strong> to refresh your documents from Microsoft 365</p>
+                  <p class="text-sm text-gray-600">Click <strong>"Sync OneDrive"</strong> to refresh your documents from Microsoft 365</p>
                 </div>
                 <div class="flex items-start gap-2">
                   <svg class="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2287,6 +2594,9 @@ function closeHelpGuide() {
 // Make help functions globally accessible
 window.showHelpGuide = showHelpGuide;
 window.closeHelpGuide = closeHelpGuide;
+
+// Make GoogleDriveAPI globally accessible
+window.GoogleDriveAPI = GoogleDriveAPI;
 
 // ============================================
 // INITIALIZE APP
@@ -2378,7 +2688,7 @@ async function refreshSharePointDocs() {
   showNotification('Syncing SharePoint documents...', 'info');
 
   try {
-    const files = await MicrosoftGraphAPI.getSharePointFiles();
+    const files = await MicrosoftGraphAPI.getOneDriveFiles();
     AppState.documents = files;
     renderDocuments();
     showNotification(`Synced ${files.length} documents from SharePoint`, 'success');
@@ -2387,14 +2697,4 @@ async function refreshSharePointDocs() {
     showNotification('Failed to sync SharePoint documents', 'error');
   }
 }
-
-// Make functions globally available
-window.MicrosoftGraphAPI = MicrosoftGraphAPI;
-window.refreshSharePointDocs = refreshSharePointDocs;
-window.showNotification = showNotification;
-window.signOut = async function() {
-  if (confirm('Are you sure you want to sign out?')) {
-    await MicrosoftGraphAPI.logout();
-  }
-};
 

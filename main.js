@@ -1,13 +1,11 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const { PublicClientApplication } = require('@azure/msal-node');
-const SimpleStore = require('./simpleStore');
 const http = require('http');
 
 // Disable hardware acceleration to fix GPU errors on Windows
 app.disableHardwareAcceleration();
 
-const store = new SimpleStore();
 let authServer = null;
 
 // MSAL Configuration
