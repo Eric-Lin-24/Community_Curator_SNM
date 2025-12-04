@@ -1475,36 +1475,48 @@ async function downloadFileFromOneDrive(fileId, fileName) {
     throw error;
   }
 }
+/**
+ * Download a file from Google Drive using the v3 API and return a File object.
+ *
+ * @param {string} fileId     - Google Drive file ID
+ * @param {string} fileName   - Desired file name for the File object
+ * @param {string} accessToken - OAuth2 access token with drive.readonly / drive scope
+ * @returns {Promise<File>}
+ */
+export async function downloadFileFromGoogleDrive(fileId, fileName, accessToken) {
+  console.log('=== DOWNLOADING FROM GOOGLE DRIVE ===');
+  console.log('File ID:', fileId);
+  console.log('File Name:', fileName);
 
-// Download file from Google Drive
-async function downloadFileFromGoogleDrive(fileId, fileName) {
+  if (!accessToken) {
+    throw new Error('No Google access token provided');
+  }
+
+  const url = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`;
+
   try {
-    console.log('=== DOWNLOADING FROM GOOGLE DRIVE ===');
-    console.log('File ID:', fileId);
-    console.log('File Name:', fileName);
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${accessToken}`
+      }
+    });
 
-    // Use the electronAPI to download the file
-    const result = await window.electronAPI.downloadGoogleDriveFile(fileId);
-
-    if (!result || !result.data) {
-      throw new Error('Failed to download file from Google Drive - no data returned');
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      console.error('Google Drive download failed:', res.status, res.statusText, text);
+      throw new Error(`Google Drive download failed: ${res.status} ${res.statusText}`);
     }
 
-    console.log('Data received from Google Drive API, converting from base64...');
+    // Get MIME type from headers or default
+    const mimeType = res.headers.get('Content-Type') || 'application/octet-stream';
 
-    // Convert base64 to blob
-    const byteCharacters = atob(result.data);
-    const byteNumbers = new Array(byteCharacters.length);
-    for (let i = 0; i < byteCharacters.length; i++) {
-      byteNumbers[i] = byteCharacters.charCodeAt(i);
-    }
-    const byteArray = new Uint8Array(byteNumbers);
-    const blob = new Blob([byteArray], { type: result.mimeType || 'application/octet-stream' });
+    // Convert response to Blob directly
+    const blob = await res.blob();
+    console.log('Blob created:', blob.size, 'bytes, type:', mimeType);
 
-    console.log('Blob created:', blob.size, 'bytes, type:', blob.type);
-
-    // Convert blob to File object
-    const file = new File([blob], fileName, { type: blob.type });
+    const safeName = fileName || `drive-file-${fileId}`;
+    const file = new File([blob], safeName, { type: mimeType });
 
     console.log('✓ File object created:', file.name, file.size, 'bytes', file.type);
     return file;
@@ -1513,6 +1525,7 @@ async function downloadFileFromGoogleDrive(fileId, fileName) {
     throw error;
   }
 }
+
 
 // Helper function to format file size
 function formatFileSize(bytes) {
