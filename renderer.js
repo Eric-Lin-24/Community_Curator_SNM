@@ -21,7 +21,7 @@ const AppState = {
   googleDriveEmail: '',
   activeDocumentSource: 'onedrive', // 'onedrive' or 'googledrive'
   subscribedChats: [], // List of subscribed chat IDs from Azure VM
-  azureVmUrl: '', // Azure VM URL for fetching chat IDs
+  azureVmUrl: 'http://20.153.191.11:8000', // Azure VM URL (hardcoded)
   loadingSubscribedChats: false
 };
 
@@ -698,6 +698,9 @@ const AzureVMAPI = {
       throw new Error('Azure VM URL not configured. Please set it in Settings.');
     }
 
+    console.log('=== PREPARING TO SEND TO AZURE VM ===');
+    console.log('Files received in scheduleMessage:', files.length);
+
     // Prepare form data
     const formData = new FormData();
     formData.append('target_user_id', targetUserId.toString());
@@ -706,13 +709,17 @@ const AzureVMAPI = {
 
     // Add files if any
     if (files && files.length > 0) {
-      Array.from(files).forEach((file) => {
+      console.log('Adding files to FormData:');
+      Array.from(files).forEach((file, index) => {
+        console.log(`  [${index}] ${file.name} - ${file.size} bytes - ${file.type}`);
         formData.append('files', file);
       });
+    } else {
+      console.log('No files to add to FormData');
     }
 
     console.log('Sending POST to:', `${AppState.azureVmUrl}/schedule_message`);
-    console.log('Payload:', {
+    console.log('Payload summary:', {
       target_user_id: targetUserId,
       message: message,
       scheduled_timestamp: scheduledTimestamp,
@@ -744,7 +751,15 @@ const AzureVMAPI = {
     }
 
     const result = await response.json();
-    console.log('Schedule successful:', result);
+    console.log('=== MESSAGE SCHEDULED SUCCESSFULLY ===');
+    console.log('Response from server:', result);
+    console.log(`✓ Message scheduled with ${files.length} file(s) uploaded`);
+    if (files.length > 0) {
+      console.log('✓ Files uploaded to server:');
+      files.forEach((file, index) => {
+        console.log(`  [${index + 1}] ${file.name} - ${file.size} bytes`);
+      });
+    }
     return result;
   }
 };
@@ -1079,12 +1094,19 @@ async function scheduleMessage(event) {
   try {
     // Download cloud files if any are selected
     const downloadedCloudFiles = [];
+
+    console.log('=== FILE PREPARATION ===');
+    console.log('Selected cloud files:', selectedCloudFiles.length, selectedCloudFiles);
+    console.log('Local files:', localFiles.length);
+
     if (selectedCloudFiles.length > 0) {
       showNotification(`Downloading ${selectedCloudFiles.length} file(s) from cloud storage...`, 'info');
 
       for (const cloudFile of selectedCloudFiles) {
         try {
+          console.log(`Attempting to download: ${cloudFile.name} from ${cloudFile.source}`);
           let downloadedFile;
+
           if (cloudFile.source === 'onedrive') {
             downloadedFile = await downloadFileFromOneDrive(cloudFile.id, cloudFile.name);
           } else if (cloudFile.source === 'googledrive') {
@@ -1093,10 +1115,12 @@ async function scheduleMessage(event) {
 
           if (downloadedFile) {
             downloadedCloudFiles.push(downloadedFile);
-            console.log('Downloaded:', cloudFile.name, downloadedFile.size, 'bytes');
+            console.log('✓ Downloaded successfully:', cloudFile.name, downloadedFile.size, 'bytes', downloadedFile.type);
+          } else {
+            console.warn('⚠ Download returned null/undefined for:', cloudFile.name);
           }
         } catch (error) {
-          console.error(`Failed to download ${cloudFile.name}:`, error);
+          console.error(`✗ Failed to download ${cloudFile.name}:`, error);
           showNotification(`Warning: Failed to download ${cloudFile.name}`, 'warning');
         }
       }
@@ -1107,9 +1131,11 @@ async function scheduleMessage(event) {
     // Combine local and downloaded cloud files
     const allFiles = [...localFiles, ...downloadedCloudFiles];
 
+    console.log('=== FINAL FILE COUNT ===');
     console.log('Total files to send:', allFiles.length);
-    console.log('- Local files:', localFiles.length);
-    console.log('- Cloud files:', downloadedCloudFiles.length);
+    console.log('- Local files:', localFiles.length, localFiles.map(f => f.name));
+    console.log('- Cloud files downloaded:', downloadedCloudFiles.length, downloadedCloudFiles.map(f => f.name));
+    console.log('All files:', allFiles.map(f => ({ name: f.name, size: f.size, type: f.type })));
 
     showNotification('Scheduling message...', 'info');
 
@@ -1139,10 +1165,23 @@ async function scheduleMessage(event) {
     hideModal();
     renderScheduling();
 
+    // Show success notification with file count
+    const fileCountMsg = allFiles.length > 0 ? ` with ${allFiles.length} file(s)` : '';
     showNotification(
-      `✓ Message scheduled successfully! Will be sent ${formatDateTime(scheduledTime)}`,
+      `✓ Message scheduled successfully${fileCountMsg}! Will be sent ${formatDateTime(scheduledTime)}`,
       'success'
     );
+
+    // Console confirmation of uploaded files
+    if (allFiles.length > 0) {
+      console.log('╔════════════════════════════════════════════════════════════╗');
+      console.log('║           FILES UPLOADED SUCCESSFULLY TO SERVER           ║');
+      console.log('╠════════════════════════════════════════════════════════════╣');
+      allFiles.forEach((file, index) => {
+        console.log(`║ [${index + 1}] ${file.name.padEnd(45)} │ ${(file.size / 1024).toFixed(1).padStart(8)} KB ║`);
+      });
+      console.log('╚════════════════════════════════════════════════════════════╝');
+    }
   } catch (error) {
     console.error('Error scheduling message:', error);
     showNotification('Failed to schedule message: ' + error.message, 'error');
@@ -1259,7 +1298,7 @@ async function loadCloudFilesForPicker() {
     // Render file list
     cloudFileList.innerHTML = files.map(file => `
       <div class="flex items-center gap-2 p-2 hover:bg-gray-50 rounded border border-gray-200 cursor-pointer" onclick="toggleCloudFileSelection('${file.id}', '${file.title.replace(/'/g, "\\'")}', '${file.source}')">
-        <input type="checkbox" id="cloud-file-${file.id}" class="w-4 h-4 text-blue-600" onclick="event.stopPropagation()">
+        <input type="checkbox" id="cloud-file-${file.id}" class="w-4 h-4 text-blue-600" onclick="event.stopPropagation(); toggleCloudFileSelection('${file.id}', '${file.title.replace(/'/g, "\\'")}', '${file.source}')">
         <div class="flex-1 min-w-0">
           <p class="text-sm font-medium text-gray-700 truncate">${file.title}</p>
           <p class="text-xs text-gray-500">${file.source === 'onedrive' ? 'OneDrive' : 'Google Drive'} • ${formatFileSize(file.size || 0)}</p>
@@ -1274,18 +1313,30 @@ async function loadCloudFilesForPicker() {
 
 // Toggle cloud file selection
 function toggleCloudFileSelection(fileId, fileName, source) {
-  const checkbox = document.getElementById(`cloud-file-${fileId}`);
-  if (!checkbox) return;
+  console.log('toggleCloudFileSelection called:', { fileId, fileName, source });
 
+  const checkbox = document.getElementById(`cloud-file-${fileId}`);
+  if (!checkbox) {
+    console.warn('Checkbox not found for fileId:', fileId);
+    return;
+  }
+
+  // Toggle checkbox state
   checkbox.checked = !checkbox.checked;
+
+  console.log('Checkbox state:', checkbox.checked);
 
   if (checkbox.checked) {
     // Add to selected files
     selectedCloudFiles.push({ id: fileId, name: fileName, source: source });
+    console.log('✓ File added to selection:', fileName);
   } else {
     // Remove from selected files
     selectedCloudFiles = selectedCloudFiles.filter(f => f.id !== fileId);
+    console.log('✗ File removed from selection:', fileName);
   }
+
+  console.log('Total selected cloud files:', selectedCloudFiles.length, selectedCloudFiles);
 
   // Update file list display
   updateSelectedFilesDisplay();
@@ -1385,12 +1436,16 @@ async function refreshCloudFilesForPicker() {
 // Download file from OneDrive
 async function downloadFileFromOneDrive(fileId, fileName) {
   try {
-    console.log('Downloading from OneDrive:', fileId, fileName);
+    console.log('=== DOWNLOADING FROM ONEDRIVE ===');
+    console.log('File ID:', fileId);
+    console.log('File Name:', fileName);
 
     const token = await window.electronAPI.getAccessToken();
     if (!token) {
       throw new Error('Not authenticated with Microsoft');
     }
+
+    console.log('Access token obtained, fetching file...');
 
     // Get download URL from Microsoft Graph
     const response = await fetch(`https://graph.microsoft.com/v1.0/me/drive/items/${fileId}/content`, {
@@ -1404,16 +1459,19 @@ async function downloadFileFromOneDrive(fileId, fileName) {
       throw new Error(`Failed to download file: ${response.status} ${response.statusText}`);
     }
 
+    console.log('File fetched from OneDrive, converting to blob...');
+
     // Get file blob
     const blob = await response.blob();
+    console.log('Blob created:', blob.size, 'bytes, type:', blob.type);
 
     // Convert blob to File object
-    const file = new File([blob], fileName, { type: blob.type });
+    const file = new File([blob], fileName, { type: blob.type || 'application/octet-stream' });
 
-    console.log('Downloaded from OneDrive:', fileName, file.size, 'bytes');
+    console.log('✓ File object created:', file.name, file.size, 'bytes', file.type);
     return file;
   } catch (error) {
-    console.error('Error downloading from OneDrive:', error);
+    console.error('✗ Error downloading from OneDrive:', error);
     throw error;
   }
 }
@@ -1421,14 +1479,18 @@ async function downloadFileFromOneDrive(fileId, fileName) {
 // Download file from Google Drive
 async function downloadFileFromGoogleDrive(fileId, fileName) {
   try {
-    console.log('Downloading from Google Drive:', fileId, fileName);
+    console.log('=== DOWNLOADING FROM GOOGLE DRIVE ===');
+    console.log('File ID:', fileId);
+    console.log('File Name:', fileName);
 
     // Use the electronAPI to download the file
     const result = await window.electronAPI.downloadGoogleDriveFile(fileId);
 
     if (!result || !result.data) {
-      throw new Error('Failed to download file from Google Drive');
+      throw new Error('Failed to download file from Google Drive - no data returned');
     }
+
+    console.log('Data received from Google Drive API, converting from base64...');
 
     // Convert base64 to blob
     const byteCharacters = atob(result.data);
@@ -1439,13 +1501,15 @@ async function downloadFileFromGoogleDrive(fileId, fileName) {
     const byteArray = new Uint8Array(byteNumbers);
     const blob = new Blob([byteArray], { type: result.mimeType || 'application/octet-stream' });
 
+    console.log('Blob created:', blob.size, 'bytes, type:', blob.type);
+
     // Convert blob to File object
     const file = new File([blob], fileName, { type: blob.type });
 
-    console.log('Downloaded from Google Drive:', fileName, file.size, 'bytes');
+    console.log('✓ File object created:', file.name, file.size, 'bytes', file.type);
     return file;
   } catch (error) {
-    console.error('Error downloading from Google Drive:', error);
+    console.error('✗ Error downloading from Google Drive:', error);
     throw error;
   }
 }

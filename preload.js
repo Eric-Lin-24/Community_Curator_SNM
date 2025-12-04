@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getGoogleAccessToken: () => ipcRenderer.invoke('get-google-access-token'),
   getGoogleUserInfo: () => ipcRenderer.invoke('get-google-user-info'),
   getGoogleDriveFiles: () => ipcRenderer.invoke('get-google-drive-files'),
+  downloadGoogleDriveFile: (fileId) => ipcRenderer.invoke('download-google-drive-file', fileId),
   googleLogout: () => ipcRenderer.invoke('google-logout'),
   onGoogleAuthSuccess: (callback) => ipcRenderer.on('google-auth-success', (event, data) => callback(data)),
   onGoogleAuthError: (callback) => ipcRenderer.on('google-auth-error', (event, error) => callback(error))

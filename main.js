@@ -656,6 +656,131 @@ ipcMain.handle('get-google-drive-files', async () => {
   }
 });
 
+// Download Google Drive file
+ipcMain.handle('download-google-drive-file', async (event, fileId) => {
+  try {
+    console.log('Downloading Google Drive file:', fileId);
+
+    // Get access token directly from storage
+    let accessToken = store.get('googleAccessToken');
+    const refreshToken = store.get('googleRefreshToken');
+    const expiry = store.get('googleTokenExpiry');
+
+    if (!accessToken || !refreshToken) {
+      throw new Error('Not authenticated with Google');
+    }
+
+    // Check if token is expired and refresh if needed
+    if (expiry && Date.now() >= expiry) {
+      try {
+        oauth2Client.setCredentials({
+          refresh_token: refreshToken
+        });
+
+        const { credentials } = await oauth2Client.refreshAccessToken();
+
+        // Update stored tokens
+        store.set('googleAccessToken', credentials.access_token);
+        store.set('googleTokenExpiry', credentials.expiry_date);
+
+        accessToken = credentials.access_token;
+      } catch (error) {
+        console.log('Token refresh failed:', error.message);
+        throw error;
+      }
+    }
+
+    // Set credentials
+    oauth2Client.setCredentials({
+      access_token: accessToken
+    });
+
+    const drive = google.drive({ version: 'v3', auth: oauth2Client });
+
+    // Get file metadata first
+    const metadata = await drive.files.get({
+      fileId: fileId,
+      fields: 'name, mimeType, size'
+    });
+
+    console.log('File metadata:', metadata.data);
+
+    const mimeType = metadata.data.mimeType;
+    const fileName = metadata.data.name;
+    let response;
+    let exportMimeType = null;
+    let finalFileName = fileName;
+
+    // Check if it's a Google Workspace file that needs to be exported
+    if (mimeType === 'application/vnd.google-apps.document') {
+      // Google Docs - export as PDF
+      console.log('Exporting Google Doc as PDF...');
+      exportMimeType = 'application/pdf';
+      finalFileName = fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`;
+
+      response = await drive.files.export({
+        fileId: fileId,
+        mimeType: exportMimeType
+      }, {
+        responseType: 'arraybuffer'
+      });
+    } else if (mimeType === 'application/vnd.google-apps.spreadsheet') {
+      // Google Sheets - export as Excel
+      console.log('Exporting Google Sheet as XLSX...');
+      exportMimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      finalFileName = fileName.endsWith('.xlsx') ? fileName : `${fileName}.xlsx`;
+
+      response = await drive.files.export({
+        fileId: fileId,
+        mimeType: exportMimeType
+      }, {
+        responseType: 'arraybuffer'
+      });
+    } else if (mimeType === 'application/vnd.google-apps.presentation') {
+      // Google Slides - export as PDF
+      console.log('Exporting Google Slides as PDF...');
+      exportMimeType = 'application/pdf';
+      finalFileName = fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`;
+
+      response = await drive.files.export({
+        fileId: fileId,
+        mimeType: exportMimeType
+      }, {
+        responseType: 'arraybuffer'
+      });
+    } else {
+      // Regular file - download directly
+      console.log('Downloading regular file...');
+      response = await drive.files.get({
+        fileId: fileId,
+        alt: 'media'
+      }, {
+        responseType: 'arraybuffer'
+      });
+      exportMimeType = mimeType;
+    }
+
+    // Convert to base64
+    const base64Data = Buffer.from(response.data).toString('base64');
+
+    console.log('File downloaded/exported successfully');
+    console.log('- Original name:', fileName);
+    console.log('- Final name:', finalFileName);
+    console.log('- Size:', response.data.byteLength, 'bytes');
+    console.log('- MIME type:', exportMimeType);
+
+    return {
+      data: base64Data,
+      mimeType: exportMimeType,
+      name: finalFileName,
+      size: response.data.byteLength
+    };
+  } catch (error) {
+    console.error('Error downloading Google Drive file:', error);
+    throw error;
+  }
+});
+
 // Logout from Google
 ipcMain.handle('google-logout', async () => {
   store.delete('googleAccessToken');
