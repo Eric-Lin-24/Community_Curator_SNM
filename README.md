@@ -88,6 +88,9 @@ project/
 - Schedule Telegram messages
 - View message status (pending, sent, failed, cancelled)
 - Filter messages by status
+- **Azure VM Integration**: Connect to your Azure VM to fetch subscribed chat IDs
+- Select recipients from subscribed chats or enter manually
+- Attach files to scheduled messages
 
 ### Forms Management
 - Create custom forms with multiple field types
@@ -106,6 +109,27 @@ project/
 - Configure folder paths for syncing
 - Enable/disable automatic sync
 - Manual sync trigger
+
+### Azure VM Integration
+- Configure Azure VM URL in Settings
+- Fetch subscribed chat IDs from your Azure VM database
+- Use subscribed chats when scheduling messages
+- **Example URL**: `http://yusuf-curator-vm.francecentral.cloudapp.azure.com:8000`
+- **Expected API format**: Your Azure VM should expose a GET endpoint at `/api/subscribed-chats` that returns:
+  ```json
+  {
+    "chats": [
+      {
+        "id": "chat_id_123",
+        "name": "Chat Name",
+        "platform": "whatsapp",
+        "type": "group"
+      }
+    ]
+  }
+  ```
+  Or simply an array of chat objects directly.
+- **CORS Required**: Your server must allow requests from the Electron app
 
 ## Development
 
