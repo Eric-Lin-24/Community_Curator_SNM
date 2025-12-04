@@ -457,25 +457,56 @@ const GoogleDriveAPI = {
     }
   },
 
-  async checkAuthentication() {
+    async checkAuthentication() {
     try {
+      // Get user info
       const userInfo = await window.electronAPI.getGoogleUserInfo();
 
-      if (userInfo) {
-        AppState.googleDriveConnected = true;
-        AppState.googleDriveEmail = userInfo.email;
-        console.log('Google Drive authenticated:', userInfo);
-        return true;
-      } else {
+      if (!userInfo) {
         AppState.googleDriveConnected = false;
         AppState.googleDriveEmail = '';
         return false;
       }
+
+      // ✅ CRITICAL: Also verify we have a valid access token
+      const tokenInfo = await window.electronAPI.getGoogleAccessToken();
+
+      if (!tokenInfo || !tokenInfo.access_token) {
+        console.warn('User info exists but no access token - session may have expired');
+        AppState.googleDriveConnected = false;
+        AppState.googleDriveEmail = '';
+
+        // Try to refresh the token
+        try {
+          const refreshed = await window.electronAPI.refreshGoogleToken();
+          if (refreshed && refreshed.access_token) {
+            console.log('✓ Token refreshed successfully during auth check');
+            AppState.googleDriveConnected = true;
+            AppState.googleDriveEmail = userInfo.email;
+            return true;
+          }
+        } catch (refreshError) {
+          console.error('Token refresh failed:', refreshError);
+        }
+
+        showNotification('Google Drive session expired. Please reconnect in Settings.', 'warning');
+        return false;
+      }
+
+      // ✅ Both user info AND valid token exist
+      AppState.googleDriveConnected = true;
+      AppState.googleDriveEmail = userInfo.email;
+      console.log('✓ Google Drive authenticated:', userInfo.email);
+      return true;
+
     } catch (error) {
       console.error('Google auth check error:', error);
+      AppState.googleDriveConnected = false;
+      AppState.googleDriveEmail = '';
       return false;
     }
   },
+
 
   async logout() {
     try {
@@ -1099,34 +1130,61 @@ async function scheduleMessage(event) {
     console.log('Selected cloud files:', selectedCloudFiles.length, selectedCloudFiles);
     console.log('Local files:', localFiles.length);
 
+    // Inside scheduleMessage function, in the cloud files download loop
     if (selectedCloudFiles.length > 0) {
       showNotification(`Downloading ${selectedCloudFiles.length} file(s) from cloud storage...`, 'info');
 
       for (const cloudFile of selectedCloudFiles) {
         try {
-          console.log(`Attempting to download: ${cloudFile.name} from ${cloudFile.source}`);
+          console.log(`Downloading cloud file: ${cloudFile.name} from ${cloudFile.source}`);
+
           let downloadedFile;
 
           if (cloudFile.source === 'onedrive') {
-            downloadedFile = await downloadFileFromOneDrive(cloudFile.id, cloudFile.name);
+            // Find the full file object from AppState.documents
+            const fullFile = AppState.documents.find(d => d.id === cloudFile.id);
+            if (!fullFile) {
+              throw new Error(`File metadata not found for: ${cloudFile.name}`);
+            }
+
+            downloadedFile = await downloadFileFromOneDrive(
+              cloudFile.id,
+              cloudFile.name
+            );
           } else if (cloudFile.source === 'googledrive') {
-            downloadedFile = await downloadFileFromGoogleDrive(cloudFile.id, cloudFile.name);
+            // Find the full file object from AppState.documents
+            const fullFile = AppState.documents.find(d => d.id === cloudFile.id);
+            if (!fullFile) {
+              throw new Error(`File metadata not found for: ${cloudFile.name}`);
+            }
+
+            // Pass mimeType from the full file object
+            downloadedFile = await downloadFileFromGoogleDrive(
+              cloudFile.id,
+              cloudFile.name,
+              fullFile.mimeType
+            );
+          } else {
+            throw new Error(`Unknown file source: ${cloudFile.source}`);
           }
 
-          if (downloadedFile) {
-            downloadedCloudFiles.push(downloadedFile);
-            console.log('✓ Downloaded successfully:', cloudFile.name, downloadedFile.size, 'bytes', downloadedFile.type);
-          } else {
-            console.warn('⚠ Download returned null/undefined for:', cloudFile.name);
-          }
+          downloadedCloudFiles.push(downloadedFile);
+          console.log(`✓ Downloaded: ${downloadedFile.name} (${downloadedFile.size} bytes)`);
+
         } catch (error) {
           console.error(`✗ Failed to download ${cloudFile.name}:`, error);
-          showNotification(`Warning: Failed to download ${cloudFile.name}`, 'warning');
+          showNotification(`Failed to download ${cloudFile.name}: ${error.message}`, 'error');
+          // Continue with other files instead of stopping
         }
       }
 
-      showNotification(`Downloaded ${downloadedCloudFiles.length} file(s) successfully`, 'success');
+      if (downloadedCloudFiles.length > 0) {
+        showNotification(`Downloaded ${downloadedCloudFiles.length} file(s) successfully`, 'success');
+      } else if (selectedCloudFiles.length > 0) {
+        showNotification('All file downloads failed. Message will be scheduled without attachments.', 'warning');
+      }
     }
+
 
     // Combine local and downloaded cloud files
     const allFiles = [...localFiles, ...downloadedCloudFiles];
@@ -1475,56 +1533,36 @@ async function downloadFileFromOneDrive(fileId, fileName) {
     throw error;
   }
 }
-/**
- * Download a file from Google Drive using the v3 API and return a File object.
- *
- * @param {string} fileId     - Google Drive file ID
- * @param {string} fileName   - Desired file name for the File object
- * @param {string} accessToken - OAuth2 access token with drive.readonly / drive scope
- * @returns {Promise<File>}
- */
-export async function downloadFileFromGoogleDrive(fileId, fileName, accessToken) {
-  console.log('=== DOWNLOADING FROM GOOGLE DRIVE ===');
+async function downloadFileFromGoogleDrive(fileId, fileName, mimeType) {
+  console.log('=== GOOGLE DRIVE DOWNLOAD START ===');
   console.log('File ID:', fileId);
   console.log('File Name:', fileName);
-
-  if (!accessToken) {
-    throw new Error('No Google access token provided');
-  }
-
-  const url = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`;
+  console.log('MIME Type:', mimeType);
 
   try {
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${accessToken}`
-      }
-    });
+    // Let main process handle the download (it has the token)
+    const result = await window.electronAPI.downloadGoogleDriveFile(fileId, fileName, mimeType);
 
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      console.error('Google Drive download failed:', res.status, res.statusText, text);
-      throw new Error(`Google Drive download failed: ${res.status} ${res.statusText}`);
-    }
+    // Convert array back to Uint8Array
+    const uint8Array = new Uint8Array(result.buffer);
+    const blob = new Blob([uint8Array], { type: result.mimeType });
+    const file = new File([blob], result.fileName, { type: result.mimeType });
 
-    // Get MIME type from headers or default
-    const mimeType = res.headers.get('Content-Type') || 'application/octet-stream';
-
-    // Convert response to Blob directly
-    const blob = await res.blob();
-    console.log('Blob created:', blob.size, 'bytes, type:', mimeType);
-
-    const safeName = fileName || `drive-file-${fileId}`;
-    const file = new File([blob], safeName, { type: mimeType });
-
+    console.log('=== GOOGLE DRIVE DOWNLOAD COMPLETE ===');
     console.log('✓ File object created:', file.name, file.size, 'bytes', file.type);
+
     return file;
   } catch (error) {
-    console.error('✗ Error downloading from Google Drive:', error);
-    throw error;
+    console.error('=== GOOGLE DRIVE DOWNLOAD FAILED ===');
+    console.error('✗ Error:', error.message);
+    throw new Error(`Failed to download "${fileName}" from Google Drive: ${error.message}`);
   }
 }
+
+
+
+
+
 
 
 // Helper function to format file size

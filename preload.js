@@ -16,5 +16,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   downloadGoogleDriveFile: (fileId) => ipcRenderer.invoke('download-google-drive-file', fileId),
   googleLogout: () => ipcRenderer.invoke('google-logout'),
   onGoogleAuthSuccess: (callback) => ipcRenderer.on('google-auth-success', (event, data) => callback(data)),
-  onGoogleAuthError: (callback) => ipcRenderer.on('google-auth-error', (event, error) => callback(error))
+  onGoogleAuthError: (callback) => ipcRenderer.on('google-auth-error', (event, error) => callback(error)),
+    getGoogleDriveFiles: () => ipcRenderer.invoke('get-google-drive-files'),
+    downloadGoogleDriveFile: (fileId, fileName, mimeType) =>
+      ipcRenderer.invoke('download-google-drive-file', { fileId, fileName, mimeType })
 });
