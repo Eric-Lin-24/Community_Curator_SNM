@@ -862,7 +862,29 @@ function showModal(type) {
               </div>
               <div class="mb-4">
                 <label class="block text-sm font-medium text-gray-700 mb-1">Attach Files (Optional)</label>
-                <div class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-500 hover:bg-blue-50 transition-all cursor-pointer">
+                
+                <!-- File source tabs -->
+                <div class="flex gap-2 mb-3">
+                  <button
+                    type="button"
+                    onclick="switchFileSource('local')"
+                    id="tab-local"
+                    class="flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors bg-blue-600 text-white"
+                  >
+                    📁 Local Files
+                  </button>
+                  <button
+                    type="button"
+                    onclick="switchFileSource('cloud')"
+                    id="tab-cloud"
+                    class="flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  >
+                    ☁️ Cloud Storage
+                  </button>
+                </div>
+
+                <!-- Local file upload -->
+                <div id="local-file-section" class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-500 hover:bg-blue-50 transition-all cursor-pointer">
                   <input
                     type="file"
                     id="msg-attachments"
@@ -877,11 +899,30 @@ function showModal(type) {
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                         </svg>
                       </div>
-                      <p class="text-sm font-medium text-gray-700 mb-1">Click to upload or drag and drop</p>
+                      <p class="text-sm font-medium text-gray-700 mb-1">Click to upload from computer</p>
                       <p class="text-xs text-gray-500">PDF, DOC, Images (Max 10MB each)</p>
                     </div>
                   </label>
                 </div>
+
+                <!-- Cloud storage file picker -->
+                <div id="cloud-file-section" class="hidden border border-gray-300 rounded-lg p-4 max-h-60 overflow-y-auto">
+                  <div class="flex items-center justify-between mb-3">
+                    <p class="text-sm font-medium text-gray-700">Select from Cloud Storage</p>
+                    <button
+                      type="button"
+                      onclick="refreshCloudFilesForPicker()"
+                      class="text-xs text-blue-600 hover:text-blue-700"
+                    >
+                      🔄 Refresh
+                    </button>
+                  </div>
+                  <div id="cloud-file-list-picker" class="space-y-2">
+                    <p class="text-sm text-gray-500 text-center py-4">Loading files...</p>
+                  </div>
+                </div>
+
+                <!-- Selected files display -->
                 <div id="file-list" class="mt-3 space-y-2"></div>
               </div>
               <div class="mb-4">
@@ -929,6 +970,9 @@ function hideModal() {
   if (modal) {
     modal.remove();
   }
+
+  // Clear cloud file selection
+  selectedCloudFiles = [];
 }
 
 // Helper function to select a subscribed chat
@@ -1026,15 +1070,51 @@ async function scheduleMessage(event) {
   // Convert scheduled time to ISO 8601 format (YYYY-MM-DDTHH:MM:SS.sssZ)
   const scheduledTimestamp = new Date(scheduledTime).toISOString();
 
-  // Get files
-  const files = fileInput && fileInput.files.length > 0 ? Array.from(fileInput.files) : [];
+  // Get local files (fileInput already declared above)
+  const localFiles = fileInput && fileInput.files.length > 0 ? Array.from(fileInput.files) : [];
 
   // Show loading
-  showNotification('Scheduling message...', 'info');
+  showNotification('Preparing files and scheduling message...', 'info');
 
   try {
-    // Use AzureVMAPI to schedule the message
-    const result = await AzureVMAPI.scheduleMessage(targetUserId, content, scheduledTimestamp, files);
+    // Download cloud files if any are selected
+    const downloadedCloudFiles = [];
+    if (selectedCloudFiles.length > 0) {
+      showNotification(`Downloading ${selectedCloudFiles.length} file(s) from cloud storage...`, 'info');
+
+      for (const cloudFile of selectedCloudFiles) {
+        try {
+          let downloadedFile;
+          if (cloudFile.source === 'onedrive') {
+            downloadedFile = await downloadFileFromOneDrive(cloudFile.id, cloudFile.name);
+          } else if (cloudFile.source === 'googledrive') {
+            downloadedFile = await downloadFileFromGoogleDrive(cloudFile.id, cloudFile.name);
+          }
+
+          if (downloadedFile) {
+            downloadedCloudFiles.push(downloadedFile);
+            console.log('Downloaded:', cloudFile.name, downloadedFile.size, 'bytes');
+          }
+        } catch (error) {
+          console.error(`Failed to download ${cloudFile.name}:`, error);
+          showNotification(`Warning: Failed to download ${cloudFile.name}`, 'warning');
+        }
+      }
+
+      showNotification(`Downloaded ${downloadedCloudFiles.length} file(s) successfully`, 'success');
+    }
+
+    // Combine local and downloaded cloud files
+    const allFiles = [...localFiles, ...downloadedCloudFiles];
+
+    console.log('Total files to send:', allFiles.length);
+    console.log('- Local files:', localFiles.length);
+    console.log('- Cloud files:', downloadedCloudFiles.length);
+
+    showNotification('Scheduling message...', 'info');
+
+    // Use AzureVMAPI to schedule the message with all files
+    const result = await AzureVMAPI.scheduleMessage(targetUserId, content, scheduledTimestamp, allFiles);
 
     // Store message locally for UI display
     const newMessage = {
@@ -1052,6 +1132,10 @@ async function scheduleMessage(event) {
     };
 
     AppState.scheduledMessages.push(newMessage);
+
+    // Clear selected cloud files
+    selectedCloudFiles = [];
+
     hideModal();
     renderScheduling();
 
@@ -1118,6 +1202,261 @@ function removeFile(index) {
 
   fileInput.files = dt.files;
   handleFileSelect({ target: fileInput });
+}
+
+// ============================================
+// CLOUD FILE HANDLING FOR SCHEDULING
+// ============================================
+
+// Store for cloud files selected for attachment
+let selectedCloudFiles = [];
+
+// Switch between local and cloud file sources
+function switchFileSource(source) {
+  const localSection = document.getElementById('local-file-section');
+  const cloudSection = document.getElementById('cloud-file-section');
+  const tabLocal = document.getElementById('tab-local');
+  const tabCloud = document.getElementById('tab-cloud');
+
+  if (source === 'local') {
+    localSection.classList.remove('hidden');
+    cloudSection.classList.add('hidden');
+    tabLocal.className = 'flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors bg-blue-600 text-white';
+    tabCloud.className = 'flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors bg-gray-100 text-gray-700 hover:bg-gray-200';
+  } else {
+    localSection.classList.add('hidden');
+    cloudSection.classList.remove('hidden');
+    tabLocal.className = 'flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors bg-gray-100 text-gray-700 hover:bg-gray-200';
+    tabCloud.className = 'flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors bg-blue-600 text-white';
+
+    // Load cloud files when switching to cloud tab
+    loadCloudFilesForPicker();
+  }
+}
+
+// Load cloud files into the picker
+async function loadCloudFilesForPicker() {
+  const cloudFileList = document.getElementById('cloud-file-list-picker');
+
+  if (!cloudFileList) return;
+
+  cloudFileList.innerHTML = '<p class="text-sm text-gray-500 text-center py-4">Loading files...</p>';
+
+  try {
+    // Get files from current source (OneDrive or Google Drive)
+    let files = [];
+    if (AppState.activeDocumentSource === 'googledrive' && AppState.googleDriveConnected) {
+      files = await GoogleDriveAPI.getGoogleDriveFiles();
+    } else if (AppState.isAuthenticated) {
+      files = await MicrosoftGraphAPI.getOneDriveFiles();
+    }
+
+    if (files.length === 0) {
+      cloudFileList.innerHTML = '<p class="text-sm text-gray-500 text-center py-4">No files found. Please connect to OneDrive or Google Drive.</p>';
+      return;
+    }
+
+    // Render file list
+    cloudFileList.innerHTML = files.map(file => `
+      <div class="flex items-center gap-2 p-2 hover:bg-gray-50 rounded border border-gray-200 cursor-pointer" onclick="toggleCloudFileSelection('${file.id}', '${file.title.replace(/'/g, "\\'")}', '${file.source}')">
+        <input type="checkbox" id="cloud-file-${file.id}" class="w-4 h-4 text-blue-600" onclick="event.stopPropagation()">
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-medium text-gray-700 truncate">${file.title}</p>
+          <p class="text-xs text-gray-500">${file.source === 'onedrive' ? 'OneDrive' : 'Google Drive'} • ${formatFileSize(file.size || 0)}</p>
+        </div>
+      </div>
+    `).join('');
+  } catch (error) {
+    console.error('Error loading cloud files:', error);
+    cloudFileList.innerHTML = '<p class="text-sm text-red-500 text-center py-4">Failed to load files. Please try again.</p>';
+  }
+}
+
+// Toggle cloud file selection
+function toggleCloudFileSelection(fileId, fileName, source) {
+  const checkbox = document.getElementById(`cloud-file-${fileId}`);
+  if (!checkbox) return;
+
+  checkbox.checked = !checkbox.checked;
+
+  if (checkbox.checked) {
+    // Add to selected files
+    selectedCloudFiles.push({ id: fileId, name: fileName, source: source });
+  } else {
+    // Remove from selected files
+    selectedCloudFiles = selectedCloudFiles.filter(f => f.id !== fileId);
+  }
+
+  // Update file list display
+  updateSelectedFilesDisplay();
+}
+
+// Update the display of selected files
+function updateSelectedFilesDisplay() {
+  const fileList = document.getElementById('file-list');
+  if (!fileList) return;
+
+  // Get local files
+  const fileInput = document.getElementById('msg-attachments');
+  const localFiles = fileInput ? Array.from(fileInput.files) : [];
+
+  // Clear and rebuild
+  fileList.innerHTML = '';
+
+  // Show cloud files
+  selectedCloudFiles.forEach((file, index) => {
+    const fileItem = document.createElement('div');
+    fileItem.className = 'flex items-center justify-between p-3 bg-blue-50 border border-blue-200 rounded-lg';
+    fileItem.innerHTML = `
+      <div class="flex items-center gap-3 flex-1 min-w-0">
+        <div class="p-2 bg-blue-100 rounded-lg flex-shrink-0">
+          <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+          </svg>
+        </div>
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-medium text-gray-700 truncate">${file.name}</p>
+          <p class="text-xs text-blue-600 mt-0.5">☁️ From ${file.source === 'onedrive' ? 'OneDrive' : 'Google Drive'}</p>
+        </div>
+      </div>
+      <button
+        type="button"
+        onclick="removeCloudFile(${index})"
+        class="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors ml-2 flex-shrink-0"
+        title="Remove file"
+      >
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    `;
+    fileList.appendChild(fileItem);
+  });
+
+  // Show local files
+  localFiles.forEach((file, index) => {
+    const fileItem = document.createElement('div');
+    fileItem.className = 'flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg hover:shadow-sm transition-shadow';
+    fileItem.innerHTML = `
+      <div class="flex items-center gap-3 flex-1 min-w-0">
+        <div class="p-2 bg-gray-100 rounded-lg flex-shrink-0">
+          <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+          </svg>
+        </div>
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-medium text-gray-700 truncate">${file.name}</p>
+          <p class="text-xs text-gray-500 mt-0.5">📁 Local • ${(file.size / 1024).toFixed(1)} KB</p>
+        </div>
+      </div>
+      <button
+        type="button"
+        onclick="removeFile(${index})"
+        class="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors ml-2 flex-shrink-0"
+        title="Remove file"
+      >
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    `;
+    fileList.appendChild(fileItem);
+  });
+}
+
+// Remove cloud file from selection
+function removeCloudFile(index) {
+  const file = selectedCloudFiles[index];
+  selectedCloudFiles.splice(index, 1);
+
+  // Uncheck the checkbox
+  const checkbox = document.getElementById(`cloud-file-${file.id}`);
+  if (checkbox) checkbox.checked = false;
+
+  updateSelectedFilesDisplay();
+}
+
+// Refresh cloud files
+async function refreshCloudFilesForPicker() {
+  await loadCloudFilesForPicker();
+  showNotification('Cloud files refreshed', 'success');
+}
+
+// Download file from OneDrive
+async function downloadFileFromOneDrive(fileId, fileName) {
+  try {
+    console.log('Downloading from OneDrive:', fileId, fileName);
+
+    const token = await window.electronAPI.getAccessToken();
+    if (!token) {
+      throw new Error('Not authenticated with Microsoft');
+    }
+
+    // Get download URL from Microsoft Graph
+    const response = await fetch(`https://graph.microsoft.com/v1.0/me/drive/items/${fileId}/content`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to download file: ${response.status} ${response.statusText}`);
+    }
+
+    // Get file blob
+    const blob = await response.blob();
+
+    // Convert blob to File object
+    const file = new File([blob], fileName, { type: blob.type });
+
+    console.log('Downloaded from OneDrive:', fileName, file.size, 'bytes');
+    return file;
+  } catch (error) {
+    console.error('Error downloading from OneDrive:', error);
+    throw error;
+  }
+}
+
+// Download file from Google Drive
+async function downloadFileFromGoogleDrive(fileId, fileName) {
+  try {
+    console.log('Downloading from Google Drive:', fileId, fileName);
+
+    // Use the electronAPI to download the file
+    const result = await window.electronAPI.downloadGoogleDriveFile(fileId);
+
+    if (!result || !result.data) {
+      throw new Error('Failed to download file from Google Drive');
+    }
+
+    // Convert base64 to blob
+    const byteCharacters = atob(result.data);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    const blob = new Blob([byteArray], { type: result.mimeType || 'application/octet-stream' });
+
+    // Convert blob to File object
+    const file = new File([blob], fileName, { type: blob.type });
+
+    console.log('Downloaded from Google Drive:', fileName, file.size, 'bytes');
+    return file;
+  } catch (error) {
+    console.error('Error downloading from Google Drive:', error);
+    throw error;
+  }
+}
+
+// Helper function to format file size
+function formatFileSize(bytes) {
+  if (bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
 }
 
 // ============================================
