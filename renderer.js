@@ -445,25 +445,41 @@ const GoogleDriveAPI = {
   async authenticateWithGoogle() {
     try {
       console.log('Starting Google Drive authentication...');
-      // Simulated for now - in a real app this would use Google OAuth
-      showNotification('Google Drive authentication coming soon...', 'info');
+      const result = await window.electronAPI.googleLogin();
 
-      // For demo purposes, simulate connection
-      const email = prompt('Enter your Google email (demo):');
-      if (email) {
-        AppState.googleDriveConnected = true;
-        AppState.googleDriveEmail = email;
-        showNotification('Successfully connected to Google Drive!', 'success');
-        renderApp();
+      if (result.success) {
+        console.log('Google authentication window opened, waiting for response...');
+        showNotification('Google authentication in progress...', 'info');
       }
     } catch (error) {
       console.error('Google Drive login error:', error);
-      showNotification('Google Drive login failed: ' + error.message, 'error');
+      showNotification('Google login failed: ' + error.message, 'error');
+    }
+  },
+
+  async checkAuthentication() {
+    try {
+      const userInfo = await window.electronAPI.getGoogleUserInfo();
+
+      if (userInfo) {
+        AppState.googleDriveConnected = true;
+        AppState.googleDriveEmail = userInfo.email;
+        console.log('Google Drive authenticated:', userInfo);
+        return true;
+      } else {
+        AppState.googleDriveConnected = false;
+        AppState.googleDriveEmail = '';
+        return false;
+      }
+    } catch (error) {
+      console.error('Google auth check error:', error);
+      return false;
     }
   },
 
   async logout() {
     try {
+      await window.electronAPI.googleLogout();
       AppState.googleDriveConnected = false;
       AppState.googleDriveEmail = '';
 
@@ -488,58 +504,23 @@ const GoogleDriveAPI = {
     }
 
     try {
-      // Simulated Google Drive files for demo
-      // In a real app, this would call the Google Drive API
       showNotification('Loading Google Drive files...', 'info');
 
-      const demoFiles = [
-        {
-          id: 'gdrive_' + generateId(),
-          title: 'Community Guidelines.pdf',
-          content: 'Guidelines for community members and volunteers',
-          source: 'googledrive',
-          created_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-          updated_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-          webUrl: 'https://drive.google.com/file/sample1',
-          size: 524288,
-          mimeType: 'application/pdf'
-        },
-        {
-          id: 'gdrive_' + generateId(),
-          title: 'Event Planning Template.docx',
-          content: 'Template for planning community events',
-          source: 'googledrive',
-          created_at: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
-          updated_at: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-          webUrl: 'https://drive.google.com/file/sample2',
-          size: 1048576,
-          mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-        },
-        {
-          id: 'gdrive_' + generateId(),
-          title: 'Volunteer Schedule 2024.xlsx',
-          content: 'Schedule for all volunteers throughout the year',
-          source: 'googledrive',
-          created_at: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString(),
-          updated_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-          webUrl: 'https://drive.google.com/file/sample3',
-          size: 2097152,
-          mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        },
-        {
-          id: 'gdrive_' + generateId(),
-          title: 'Fundraising Report Q4.pdf',
-          content: 'Quarterly fundraising performance and analysis',
-          source: 'googledrive',
-          created_at: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString(),
-          updated_at: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-          webUrl: 'https://drive.google.com/file/sample4',
-          size: 3145728,
-          mimeType: 'application/pdf'
-        }
-      ];
+      const files = await window.electronAPI.getGoogleDriveFiles();
 
-      return demoFiles;
+      // Transform Google Drive files to match our app format
+      return files.map(file => ({
+        id: file.id,
+        title: file.name,
+        content: file.name,
+        source: 'googledrive',
+        created_at: file.createdTime,
+        updated_at: file.modifiedTime,
+        webUrl: file.webViewLink,
+        size: file.size || 0,
+        mimeType: file.mimeType,
+        iconLink: file.iconLink
+      }));
     } catch (error) {
       console.error('Error fetching Google Drive files:', error);
       showNotification('Failed to fetch Google Drive files: ' + error.message, 'error');
@@ -566,11 +547,17 @@ function switchDocumentSource(source) {
 
   AppState.activeDocumentSource = source;
 
-  // Refresh documents for the selected source
-  if (source === 'onedrive') {
-    refreshOneDriveDocs();
-  } else if (source === 'googledrive') {
-    refreshGoogleDriveDocs();
+  // Just re-render to show the filtered documents
+  renderDocuments();
+
+  // Auto-sync if no documents from this source exist yet
+  const hasSourceDocs = AppState.documents.some(d => d.source === source);
+  if (!hasSourceDocs) {
+    if (source === 'onedrive') {
+      refreshOneDriveDocs();
+    } else if (source === 'googledrive') {
+      refreshGoogleDriveDocs();
+    }
   }
 }
 
@@ -584,8 +571,11 @@ async function refreshGoogleDriveDocs() {
 
   try {
     const files = await GoogleDriveAPI.getGoogleDriveFiles();
-    // Replace documents with Google Drive files
-    AppState.documents = files;
+
+    // Remove old Google Drive files and add new ones
+    AppState.documents = AppState.documents.filter(d => d.source !== 'googledrive');
+    AppState.documents.push(...files);
+
     renderDocuments();
     showNotification(`Synced ${files.length} files from Google Drive`, 'success');
   } catch (error) {
@@ -612,7 +602,11 @@ async function refreshOneDriveDocs() {
 
   try {
     const files = await MicrosoftGraphAPI.getOneDriveFiles();
-    AppState.documents = files;
+
+    // Remove old OneDrive files and add new ones
+    AppState.documents = AppState.documents.filter(d => d.source !== 'onedrive');
+    AppState.documents.push(...files);
+
     renderDocuments();
     showNotification(`Synced ${files.length} files from OneDrive`, 'success');
   } catch (error) {
@@ -1446,12 +1440,14 @@ function renderDocuments() {
   const selectedDocs = AppState.selectedDocuments || [];
   const activeSource = AppState.activeDocumentSource || 'onedrive';
 
-  // Filter documents
-  let filteredDocuments = documents;
+  // Filter documents by active source first
+  let filteredDocuments = documents.filter(d => d.source === activeSource);
+
+  // Then filter by search query
   if (searchQuery) {
     filteredDocuments = filteredDocuments.filter(d =>
       d.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      d.content.toLowerCase().includes(searchQuery.toLowerCase())
+      (d.content && d.content.toLowerCase().includes(searchQuery.toLowerCase()))
     );
   }
 
@@ -1630,7 +1626,14 @@ function renderDocuments() {
           </div>
 
           <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            ${filteredDocuments.map(doc => `
+            ${filteredDocuments.map(doc => {
+              const isGoogleDrive = doc.source === 'googledrive';
+              const sourceName = isGoogleDrive ? 'Google Drive' : 'OneDrive';
+              const sourceBadgeColor = isGoogleDrive ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700';
+              const sourceIconColor = isGoogleDrive ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600';
+              const buttonColor = isGoogleDrive ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700';
+              
+              return `
               <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow ${selectedDocs.includes(doc.id) ? 'ring-2 ring-blue-500' : ''}">
                 <div class="flex items-start justify-between mb-3">
                   <div class="flex items-center gap-3">
@@ -1641,13 +1644,13 @@ function renderDocuments() {
                       class="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
                       onclick="event.stopPropagation()"
                     />
-                    <div class="p-2 bg-green-50 text-green-600 rounded-lg">
+                    <div class="p-2 ${sourceIconColor} rounded-lg">
                       <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                       </svg>
                     </div>
                   </div>
-                  <span class="text-xs px-2 py-1 rounded bg-green-100 text-green-700">OneDrive</span>
+                  <span class="text-xs px-2 py-1 rounded ${sourceBadgeColor}">${sourceName}</span>
                 </div>
 
                 <h4 class="font-semibold text-gray-800 mb-2">${doc.title}</h4>
@@ -1663,21 +1666,22 @@ function renderDocuments() {
                     <a
                       href="${doc.webUrl}"
                       target="_blank"
-                      class="flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm text-center"
+                      class="flex-1 px-3 py-2 ${buttonColor} text-white rounded-lg transition-colors text-sm text-center"
                     >
-                      Open in OneDrive
+                      Open in ${sourceName}
                     </a>
                   ` : `
                     <button
                       onclick="viewDocument('${doc.id}')"
-                      class="flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                      class="flex-1 px-3 py-2 ${buttonColor} text-white rounded-lg transition-colors text-sm"
                     >
                       View
                     </button>
                   `}
                 </div>
               </div>
-            `).join('')}
+            `;
+            }).join('')}
           </div>
         </div>
       `}
@@ -3276,19 +3280,31 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Check for existing authentication
   await MicrosoftGraphAPI.checkAuthentication();
+  await GoogleDriveAPI.checkAuthentication();
 
-  // Initialize subscribed chats from Azure VM
-  await initializeSubscribedChats();
-
-  // Setup auth event listeners
+  // Setup Microsoft auth event listeners
   window.electronAPI.onAuthSuccess(() => {
-    console.log('Authentication successful!');
+    console.log('Microsoft authentication successful!');
     MicrosoftGraphAPI.checkAuthentication();
   });
 
   window.electronAPI.onAuthError((error) => {
-    console.error('Authentication error:', error);
+    console.error('Microsoft authentication error:', error);
     showNotification('Authentication failed: ' + error, 'error');
+  });
+
+  // Setup Google auth event listeners
+  window.electronAPI.onGoogleAuthSuccess((data) => {
+    console.log('Google authentication successful!', data);
+    AppState.googleDriveConnected = true;
+    AppState.googleDriveEmail = data.email;
+    showNotification('Successfully connected to Google Drive!', 'success');
+    renderApp();
+  });
+
+  window.electronAPI.onGoogleAuthError((error) => {
+    console.error('Google authentication error:', error);
+    showNotification('Google authentication failed: ' + error, 'error');
   });
 
   // Add some sample data for demonstration
