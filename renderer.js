@@ -19,7 +19,10 @@ const AppState = {
   whatsappPhone: '',
   googleDriveConnected: false,
   googleDriveEmail: '',
-  activeDocumentSource: 'onedrive' // 'onedrive' or 'googledrive'
+  activeDocumentSource: 'onedrive', // 'onedrive' or 'googledrive'
+  subscribedChats: [], // List of subscribed chat IDs from Azure VM
+  azureVmUrl: '', // Azure VM URL for fetching chat IDs
+  loadingSubscribedChats: false
 };
 
 // ============================================
@@ -618,14 +621,181 @@ async function refreshOneDriveDocs() {
   }
 }
 
+// ============================================
+// AZURE VM API - Chat Subscriptions
+// ============================================
+const AzureVMAPI = {
+  async fetchSubscribedChats() {
+    if (!AppState.azureVmUrl) {
+      throw new Error('Azure VM URL not configured. Please set it in Settings.');
+    }
+
+    AppState.loadingSubscribedChats = true;
+
+    try {
+      const response = await fetch(`${AppState.azureVmUrl}/subscribed_users`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        // Add timeout
+        signal: AbortSignal.timeout(10000) // 10 second timeout
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch subscribed chats: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      console.log('Raw API response:', data); // Debug log
+
+      // Handle array response directly (your API returns array)
+      let rawChats = [];
+      if (Array.isArray(data)) {
+        rawChats = data;
+      } else if (data && Array.isArray(data.chats)) {
+        rawChats = data.chats;
+      } else if (data && Array.isArray(data.users)) {
+        rawChats = data.users;
+      } else {
+        console.error('Unexpected response format:', data);
+        throw new Error('Invalid response format from Azure VM');
+      }
+
+      // Map your schema (user_id, chat_id, chat_name, created_at) to internal format
+      const formattedChats = rawChats.map(chat => ({
+        id: chat.chat_id || chat.id,           // Use chat_id as the primary ID
+        name: chat.chat_name || chat.name || chat.chat_id || 'Unknown Chat',  // Use chat_name
+        platform: chat.platform || 'whatsapp',  // Default to whatsapp if not specified
+        type: chat.type || 'group',             // Default to group if not specified
+        user_id: chat.user_id,                  // Keep user_id for reference
+        created_at: chat.created_at             // Keep created_at for reference
+      }));
+
+      console.log('Formatted chats:', formattedChats); // Debug log
+      AppState.subscribedChats = formattedChats;
+      return formattedChats;
+    } catch (error) {
+      console.error('Error fetching subscribed chats:', error);
+      throw error;
+    } finally {
+      AppState.loadingSubscribedChats = false;
+    }
+  },
+
+  async refreshSubscribedChats() {
+    try {
+      showNotification('Fetching subscribed chats...', 'info');
+      const chats = await this.fetchSubscribedChats();
+      showNotification(`Loaded ${chats.length} subscribed chat(s)`, 'success');
+
+      // If we're on the scheduling page, re-render to show updated list
+      if (AppState.currentView === 'scheduling') {
+        renderScheduling();
+      }
+    } catch (error) {
+      showNotification('Failed to fetch subscribed chats: ' + error.message, 'error');
+    }
+  },
+
+  async scheduleMessage(targetUserId, message, scheduledTimestamp, files = []) {
+    if (!AppState.azureVmUrl) {
+      throw new Error('Azure VM URL not configured. Please set it in Settings.');
+    }
+
+    // Prepare form data
+    const formData = new FormData();
+    formData.append('target_user_id', targetUserId.toString());
+    formData.append('message', message);
+    formData.append('scheduled_timestamp', scheduledTimestamp); // ISO 8601 format
+
+    // Add files if any
+    if (files && files.length > 0) {
+      Array.from(files).forEach((file) => {
+        formData.append('files', file);
+      });
+    }
+
+    console.log('Sending POST to:', `${AppState.azureVmUrl}/schedule_message`);
+    console.log('Payload:', {
+      target_user_id: targetUserId,
+      message: message,
+      scheduled_timestamp: scheduledTimestamp,
+      files_count: files.length
+    });
+
+    // Send POST request
+    const response = await fetch(`${AppState.azureVmUrl}/schedule_message`, {
+      method: 'POST',
+      body: formData
+      // Don't set Content-Type - browser handles it for FormData
+    });
+
+    if (!response.ok) {
+      let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.error || errorData.message || errorMessage;
+      } catch (e) {
+        // If response is not JSON, try text
+        try {
+          const errorText = await response.text();
+          if (errorText) errorMessage = errorText;
+        } catch (e2) {
+          // Keep default error message
+        }
+      }
+      throw new Error(errorMessage);
+    }
+
+    const result = await response.json();
+    console.log('Schedule successful:', result);
+    return result;
+  }
+};
+
+// Load subscribed chats when app initializes
+async function initializeSubscribedChats() {
+  // Try to load Azure VM URL from localStorage
+  const savedAzureUrl = localStorage.getItem('azureVmUrl');
+  if (savedAzureUrl) {
+    AppState.azureVmUrl = savedAzureUrl;
+
+    // Attempt to fetch subscribed chats in background
+    try {
+      await AzureVMAPI.fetchSubscribedChats();
+      console.log('Subscribed chats loaded:', AppState.subscribedChats.length);
+    } catch (error) {
+      console.warn('Could not load subscribed chats on init:', error.message);
+    }
+  }
+}
+
 function showModal(type) {
   let modalHtml = '';
 
   switch(type) {
     case 'newMessage':
+      // Generate options for subscribed chats
+      console.log('Generating chat options from:', AppState.subscribedChats); // Debug log
+
+      const subscribedChatsOptions = AppState.subscribedChats.map((chat, index) => {
+        // Robust field extraction
+        const chatId = chat.id || chat.chat_id || `chat_${index}`;
+        const chatName = chat.name || chat.chat_name || chatId;
+        const platform = chat.platform || 'whatsapp';
+
+        console.log(`Chat ${index}:`, { chatId, chatName, platform, raw: chat }); // Debug log
+
+        return `<option value="${chatId}" data-platform="${platform}">${chatName} (${platform})</option>`;
+      }).join('');
+
+      console.log('Generated options HTML:', subscribedChatsOptions); // Debug log
+
       modalHtml = `
         <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onclick="if(event.target === this) hideModal()">
-          <div class="bg-white rounded-xl shadow-xl max-w-md w-full p-6 mx-4">
+          <div class="bg-white rounded-xl shadow-xl max-w-md w-full p-6 mx-4 max-h-[90vh] overflow-y-auto">
             <h3 class="text-xl font-semibold mb-4">Schedule Message</h3>
             <form onsubmit="scheduleMessage(event)">
               <div class="mb-4">
@@ -633,6 +803,7 @@ function showModal(type) {
                 <select
                   id="msg-platform"
                   required
+                  onchange="toggleRecipientInput()"
                   class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="whatsapp" selected>WhatsApp</option>
@@ -641,6 +812,39 @@ function showModal(type) {
                   <option value="email">Email</option>
                 </select>
               </div>
+
+              <!-- Subscribed Chats Section -->
+              <div id="subscribed-chats-section" class="mb-4">
+                <div class="flex items-center justify-between mb-2">
+                  <label class="block text-sm font-medium text-gray-700">Subscribed Chats</label>
+                  <button
+                    type="button"
+                    onclick="refreshSubscribedChatsInModal()"
+                    class="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1"
+                    title="Refresh subscribed chats"
+                  >
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Refresh
+                  </button>
+                </div>
+                ${AppState.subscribedChats.length > 0 ? `
+                  <select
+                    id="msg-subscribed-chat"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2"
+                    onchange="onSubscribedChatSelect()"
+                  >
+                    <option value="">-- Select from subscribed chats --</option>
+                    ${subscribedChatsOptions}
+                  </select>
+                ` : `
+                  <div class="text-sm text-gray-500 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                    ${AppState.azureVmUrl ? 'No subscribed chats found. Click refresh to load.' : 'Configure Azure VM URL in Settings to load subscribed chats.'}
+                  </div>
+                `}
+              </div>
+
               <div class="mb-4">
                 <label class="block text-sm font-medium text-gray-700 mb-1">Recipient</label>
                 <input
@@ -650,6 +854,7 @@ function showModal(type) {
                   class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Enter recipient name or number"
                 />
+                <p class="text-xs text-gray-500 mt-1">Or select from subscribed chats above</p>
               </div>
               <div class="mb-4">
                 <label class="block text-sm font-medium text-gray-700 mb-1">Message Content</label>
@@ -732,29 +937,138 @@ function hideModal() {
   }
 }
 
-function scheduleMessage(event) {
+// Helper function to select a subscribed chat
+function onSubscribedChatSelect() {
+  const select = document.getElementById('msg-subscribed-chat');
+  const recipientInput = document.getElementById('msg-recipient');
+  const platformSelect = document.getElementById('msg-platform');
+
+  if (select && recipientInput && select.value) {
+    const selectedOption = select.options[select.selectedIndex];
+    const chatId = select.value;
+    const platform = selectedOption.getAttribute('data-platform') || 'whatsapp';
+
+    // Find the chat object to get the full details
+    const chat = AppState.subscribedChats.find(c => c.id === chatId);
+    if (chat) {
+      // Set recipient to chat name or ID
+      recipientInput.value = chat.name || chat.id;
+
+      // Set platform if it matches one of our options
+      const platformLower = platform.toLowerCase();
+      if (['whatsapp', 'sms', 'telegram', 'email'].includes(platformLower)) {
+        platformSelect.value = platformLower;
+      }
+    }
+  }
+}
+
+// Helper function to refresh subscribed chats in modal
+async function refreshSubscribedChatsInModal() {
+  try {
+    showNotification('Refreshing subscribed chats...', 'info');
+    await AzureVMAPI.fetchSubscribedChats();
+    showNotification(`Loaded ${AppState.subscribedChats.length} subscribed chat(s)`, 'success');
+
+    // Re-render the modal
+    hideModal();
+    showModal('newMessage');
+  } catch (error) {
+    showNotification('Failed to refresh: ' + error.message, 'error');
+  }
+}
+
+// Helper function to toggle recipient input visibility
+function toggleRecipientInput() {
+  // This can be expanded if needed for different platforms
+  // For now, all platforms use the same recipient input
+}
+
+async function scheduleMessage(event) {
   event.preventDefault();
+
+  if (!AppState.azureVmUrl) {
+    showNotification('Please configure Azure VM URL in Settings first', 'error');
+    return;
+  }
 
   const platform = document.getElementById('msg-platform').value;
   const recipient = document.getElementById('msg-recipient').value;
   const content = document.getElementById('msg-content').value;
   const scheduledTime = document.getElementById('msg-schedule').value;
+  const fileInput = document.getElementById('msg-attachments');
+  const selectedChatSelect = document.getElementById('msg-subscribed-chat');
 
-  const newMessage = {
-    id: generateId(),
-    platform: platform,
-    recipient: recipient,
-    content: content,
-    message_content: content,
-    scheduled_time: scheduledTime,
-    status: 'pending',
-    created_at: new Date().toISOString()
-  };
+  // Validate inputs
+  if (!content || !scheduledTime) {
+    showNotification('Please fill in all required fields', 'error');
+    return;
+  }
 
-  AppState.scheduledMessages.push(newMessage);
-  hideModal();
-  renderScheduling();
-  alert(`Message scheduled successfully via ${platform.charAt(0).toUpperCase() + platform.slice(1)}!`);
+  // Get the target_user_id from selected chat
+  let targetUserId = null;
+  if (selectedChatSelect && selectedChatSelect.value) {
+    const selectedChat = AppState.subscribedChats.find(c => c.id === selectedChatSelect.value);
+    if (selectedChat && selectedChat.user_id) {
+      targetUserId = selectedChat.user_id;
+    }
+  }
+
+  // If no chat selected, try to find by chat_id from recipient
+  if (!targetUserId && recipient) {
+    const chatByName = AppState.subscribedChats.find(c =>
+      c.name === recipient || c.id === recipient || c.chat_id === recipient
+    );
+    if (chatByName && chatByName.user_id) {
+      targetUserId = chatByName.user_id;
+    }
+  }
+
+  if (!targetUserId) {
+    showNotification('Could not determine target user. Please select a chat from the dropdown.', 'error');
+    return;
+  }
+
+  // Convert scheduled time to ISO 8601 format (YYYY-MM-DDTHH:MM:SS.sssZ)
+  const scheduledTimestamp = new Date(scheduledTime).toISOString();
+
+  // Get files
+  const files = fileInput && fileInput.files.length > 0 ? Array.from(fileInput.files) : [];
+
+  // Show loading
+  showNotification('Scheduling message...', 'info');
+
+  try {
+    // Use AzureVMAPI to schedule the message
+    const result = await AzureVMAPI.scheduleMessage(targetUserId, content, scheduledTimestamp, files);
+
+    // Store message locally for UI display
+    const newMessage = {
+      id: result.id || result.message_id || generateId(),
+      platform: platform,
+      recipient: recipient,
+      content: content,
+      message_content: content,
+      scheduled_time: scheduledTime,
+      scheduled_timestamp: scheduledTimestamp,
+      target_user_id: targetUserId,
+      status: result.status || 'pending',
+      created_at: new Date().toISOString(),
+      server_response: result
+    };
+
+    AppState.scheduledMessages.push(newMessage);
+    hideModal();
+    renderScheduling();
+
+    showNotification(
+      `✓ Message scheduled successfully! Will be sent ${formatDateTime(scheduledTime)}`,
+      'success'
+    );
+  } catch (error) {
+    console.error('Error scheduling message:', error);
+    showNotification('Failed to schedule message: ' + error.message, 'error');
+  }
 }
 
 function handleFileSelect(event) {
@@ -1567,20 +1881,58 @@ function renderScheduling() {
 
   content.innerHTML = `
     <div class="space-y-6">
+      <!-- Header with Actions -->
       <div class="flex items-center justify-between">
         <div>
           <h3 class="text-2xl font-bold text-gray-800">Message Scheduling</h3>
           <p class="text-gray-600">Schedule and manage automated messages</p>
         </div>
-        <button
-          onclick="showModal('newMessage')"
-          class="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-          </svg>
-          <span>Schedule Message</span>
-        </button>
+        <div class="flex items-center gap-3">
+          <button
+            onclick="AzureVMAPI.refreshSubscribedChats()"
+            class="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+            title="Refresh subscribed chats from Azure VM"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            <span>Refresh Chats</span>
+          </button>
+          <button
+            onclick="showModal('newMessage')"
+            class="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+            </svg>
+            <span>Schedule Message</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Azure VM Connection Status -->
+      <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <div class="p-2 ${AppState.azureVmUrl ? 'bg-green-100' : 'bg-gray-100'} rounded-lg">
+              <svg class="w-5 h-5 ${AppState.azureVmUrl ? 'text-green-600' : 'text-gray-400'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
+              </svg>
+            </div>
+            <div>
+              <p class="text-sm font-medium text-gray-800">Azure VM Connection</p>
+              <p class="text-xs text-gray-600">
+                ${AppState.azureVmUrl 
+                  ? `Connected to: ${AppState.azureVmUrl}` 
+                  : 'Not configured - Set Azure VM URL in Settings'}
+              </p>
+            </div>
+          </div>
+          <div class="text-right">
+            <p class="text-sm font-semibold text-gray-800">${AppState.subscribedChats.length}</p>
+            <p class="text-xs text-gray-600">Subscribed Chats</p>
+          </div>
+        </div>
       </div>
 
       <!-- Pending Messages -->
@@ -2135,11 +2487,92 @@ function renderSettings() {
             `}
           </div>
 
+          <!-- Azure VM Integration -->
+          <div class="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl shadow-sm border-2 border-blue-200 p-6">
+            <div class="flex items-start gap-3 mb-4">
+              <div class="p-2 bg-blue-600 rounded-lg">
+                <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
+                </svg>
+              </div>
+              <div class="flex-1">
+                <h3 class="text-lg font-semibold text-gray-800">Azure VM Integration</h3>
+                <p class="text-sm text-gray-600 mt-1">Connect to your Azure VM to fetch subscribed chat IDs for scheduling</p>
+              </div>
+            </div>
+
+            <div class="space-y-4">
+              <!-- Azure VM URL Configuration -->
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">
+                  Azure VM URL
+                  <span id="azure-vm-connection-status" class="ml-2 text-xs"></span>
+                </label>
+                <div class="relative">
+                  <input
+                    type="url"
+                    id="azure-vm-url-input"
+                    value="${AppState.azureVmUrl}"
+                    placeholder="https://your-azure-vm.com"
+                    oninput="handleAzureVmUrlChange()"
+                    onpaste="handleAzureVmUrlPaste(event)"
+                    class="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  />
+                  <div id="azure-vm-url-loading" class="hidden absolute right-3 top-1/2 transform -translate-y-1/2">
+                    <svg class="animate-spin h-5 w-5 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                  </div>
+                </div>
+                <p class="text-xs mt-1" id="azure-vm-url-hint">
+                  <span class="text-blue-600 font-medium">💡 Just paste your URL</span> - it will auto-save and connect immediately
+                </p>
+              </div>
+
+              <!-- Connection Stats -->
+              ${AppState.azureVmUrl ? `
+                <div class="bg-white rounded-lg p-4 border border-blue-200">
+                  <div class="flex items-center justify-between mb-2">
+                    <span class="text-sm font-medium text-gray-700">Connection Status</span>
+                    <button
+                      onclick="testAzureVmConnection()"
+                      class="text-xs px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                    >
+                      Test Connection
+                    </button>
+                  </div>
+                  <div class="grid grid-cols-2 gap-4 mt-3">
+                    <div>
+                      <p class="text-xs text-gray-500">Subscribed Chats</p>
+                      <p class="text-lg font-semibold text-gray-800">${AppState.subscribedChats.length}</p>
+                    </div>
+                    <div>
+                      <p class="text-xs text-gray-500">Status</p>
+                      <p class="text-sm font-medium text-green-600">✓ Configured</p>
+                    </div>
+                  </div>
+                </div>
+              ` : `
+                <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                  <div class="flex gap-3">
+                    <svg class="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                    <div>
+                      <p class="text-sm font-medium text-yellow-800">Not Connected</p>
+                      <p class="text-xs text-yellow-700 mt-1">Paste your Azure VM URL above to enable chat scheduling features</p>
+                    </div>
+                  </div>
+                </div>
+              `}
+            </div>
+          </div>
+
           <!-- Application Settings -->
           <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <h3 class="text-lg font-semibold text-gray-800 mb-4">Application Settings</h3>
             <div class="space-y-4">
-              <div>
                 <label class="block text-sm font-medium text-gray-700 mb-2">Theme</label>
                 <select
                   class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -2173,11 +2606,12 @@ function renderSettings() {
               </div>
 
               <button
-                onclick="alert('Settings saved!')"
-                class="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                onclick="saveSettings()"
+                class="w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors border border-gray-300"
               >
-                Save Settings
+                Save All Settings
               </button>
+              <p class="text-xs text-center text-gray-500">Azure VM URL auto-saves when you paste or type</p>
             </div>
           </div>
         </div>
@@ -2207,6 +2641,13 @@ function renderSettings() {
                 <span class="flex items-center gap-1 text-xs ${AppState.googleDriveConnected ? 'text-green-600' : 'text-gray-400'}">
                   <div class="w-2 h-2 rounded-full ${AppState.googleDriveConnected ? 'bg-green-600' : 'bg-gray-400'}"></div>
                   ${AppState.googleDriveConnected ? 'Connected' : 'Disconnected'}
+                </span>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="text-sm text-gray-600">Azure VM</span>
+                <span class="flex items-center gap-1 text-xs ${AppState.azureVmUrl ? 'text-green-600' : 'text-gray-400'}">
+                  <div class="w-2 h-2 rounded-full ${AppState.azureVmUrl ? 'bg-green-600' : 'bg-gray-400'}"></div>
+                  ${AppState.azureVmUrl ? 'Configured' : 'Not Configured'}
                 </span>
               </div>
             </div>
@@ -2363,6 +2804,235 @@ function signOut() {
     AppState.microsoftForms = [];
     AppState.documents = [];
     renderApp();
+  }
+}
+
+function saveSettings() {
+  // Get the Azure VM URL from the input
+  const azureVmUrlInput = document.getElementById('azure-vm-url-input');
+
+  if (azureVmUrlInput) {
+    const newUrl = azureVmUrlInput.value.trim();
+
+    // Validate URL format
+    if (newUrl && !newUrl.startsWith('http://') && !newUrl.startsWith('https://')) {
+      showNotification('Please enter a valid URL starting with http:// or https://', 'error');
+      return;
+    }
+
+    // Save to AppState and localStorage
+    AppState.azureVmUrl = newUrl;
+    localStorage.setItem('azureVmUrl', newUrl);
+
+    showNotification('Settings saved successfully!', 'success');
+
+    // If URL was added/changed, try to fetch subscribed chats
+    if (newUrl) {
+      AzureVMAPI.refreshSubscribedChats();
+    }
+
+    // Re-render settings to show updated connection status
+    renderSettings();
+  } else {
+    showNotification('Settings saved!', 'success');
+  }
+}
+
+// Debounce timer for Azure VM URL auto-save
+let azureVmUrlDebounceTimer = null;
+
+// Handle Azure VM URL changes with auto-save
+function handleAzureVmUrlChange() {
+  const input = document.getElementById('azure-vm-url-input');
+  if (!input) return;
+
+  const url = input.value.trim();
+
+  // Clear existing timer
+  if (azureVmUrlDebounceTimer) {
+    clearTimeout(azureVmUrlDebounceTimer);
+  }
+
+  // Update status
+  updateAzureVmUrlStatus('typing');
+
+  // Debounce for 1 second
+  azureVmUrlDebounceTimer = setTimeout(() => {
+    autoSaveAzureVmUrl(url);
+  }, 1000);
+}
+
+// Handle paste event for immediate connection
+function handleAzureVmUrlPaste(event) {
+  // Let the paste happen first
+  setTimeout(() => {
+    const input = document.getElementById('azure-vm-url-input');
+    if (!input) return;
+
+    const url = input.value.trim();
+
+    // Clear any existing timer
+    if (azureVmUrlDebounceTimer) {
+      clearTimeout(azureVmUrlDebounceTimer);
+    }
+
+    // Immediately save and connect on paste
+    updateAzureVmUrlStatus('saving');
+    autoSaveAzureVmUrl(url);
+  }, 10);
+}
+
+// Auto-save Azure VM URL and attempt connection
+async function autoSaveAzureVmUrl(url) {
+  updateAzureVmUrlStatus('saving');
+
+  // Validate URL format
+  if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
+    updateAzureVmUrlStatus('error', 'Invalid URL format - must start with http:// or https://');
+    showNotification('Invalid URL format', 'error');
+    return;
+  }
+
+  // Save to AppState and localStorage
+  const previousUrl = AppState.azureVmUrl;
+  AppState.azureVmUrl = url;
+  localStorage.setItem('azureVmUrl', url);
+
+  // If URL is empty, just clear and return
+  if (!url) {
+    AppState.subscribedChats = [];
+    updateAzureVmUrlStatus('cleared', 'URL cleared');
+    showNotification('Azure VM URL cleared', 'info');
+
+    // Update connection status in other views
+    if (AppState.currentView === 'scheduling') {
+      renderScheduling();
+    }
+    return;
+  }
+
+  // If URL changed, try to connect
+  if (url !== previousUrl) {
+    updateAzureVmUrlStatus('connecting');
+
+    try {
+      const chats = await AzureVMAPI.fetchSubscribedChats();
+      updateAzureVmUrlStatus('success', `Connected! Loaded ${chats.length} chat(s)`);
+      showNotification(`✓ Connected to Azure VM - ${chats.length} chat(s) loaded`, 'success');
+
+      // Update connection status in other views
+      if (AppState.currentView === 'scheduling') {
+        renderScheduling();
+      }
+    } catch (error) {
+      updateAzureVmUrlStatus('error', 'Connection failed: ' + error.message);
+      showNotification('Failed to connect: ' + error.message, 'error');
+      console.error('Azure VM connection error:', error);
+    }
+  } else {
+    updateAzureVmUrlStatus('saved', 'Saved');
+  }
+}
+
+// Update Azure VM URL status indicator
+function updateAzureVmUrlStatus(status, message = '') {
+  const statusElement = document.getElementById('azure-vm-connection-status');
+  const hintElement = document.getElementById('azure-vm-url-hint');
+  const loadingElement = document.getElementById('azure-vm-url-loading');
+  const inputElement = document.getElementById('azure-vm-url-input');
+
+  if (!statusElement || !hintElement || !loadingElement || !inputElement) return;
+
+  // Hide/show loading spinner
+  if (status === 'saving' || status === 'connecting') {
+    loadingElement.classList.remove('hidden');
+  } else {
+    loadingElement.classList.add('hidden');
+  }
+
+  // Update border color
+  inputElement.classList.remove('border-green-500', 'border-red-500', 'border-yellow-500', 'border-gray-300');
+
+  switch (status) {
+    case 'typing':
+      statusElement.textContent = '';
+      statusElement.className = 'ml-2 text-xs';
+      hintElement.innerHTML = '<span class="text-blue-600 font-medium">💡 Just paste your URL</span> - will auto-save in 1 second...';
+      hintElement.className = 'text-xs mt-1';
+      inputElement.classList.add('border-gray-300');
+      break;
+
+    case 'saving':
+      statusElement.textContent = '⏳ Saving...';
+      statusElement.className = 'ml-2 text-xs text-yellow-600';
+      hintElement.innerHTML = 'Saving URL...';
+      hintElement.className = 'text-xs text-yellow-600 mt-1';
+      inputElement.classList.add('border-yellow-500');
+      break;
+
+    case 'connecting':
+      statusElement.textContent = '🔄 Connecting...';
+      statusElement.className = 'ml-2 text-xs text-blue-600';
+      hintElement.innerHTML = 'Connecting to Azure VM...';
+      hintElement.className = 'text-xs text-blue-600 mt-1';
+      inputElement.classList.add('border-yellow-500');
+      break;
+
+    case 'success':
+      statusElement.textContent = '✓ Connected';
+      statusElement.className = 'ml-2 text-xs text-green-600 font-medium';
+      hintElement.innerHTML = message || 'Connected successfully!';
+      hintElement.className = 'text-xs text-green-600 mt-1';
+      inputElement.classList.add('border-green-500');
+      break;
+
+    case 'error':
+      statusElement.textContent = '✗ Error';
+      statusElement.className = 'ml-2 text-xs text-red-600 font-medium';
+      hintElement.innerHTML = message || 'Connection failed';
+      hintElement.className = 'text-xs text-red-600 mt-1';
+      inputElement.classList.add('border-red-500');
+      break;
+
+    case 'cleared':
+      statusElement.textContent = '';
+      statusElement.className = 'ml-2 text-xs';
+      hintElement.innerHTML = '<span class="text-blue-600 font-medium">💡 Just paste your URL</span> - it will auto-save and connect immediately';
+      hintElement.className = 'text-xs mt-1';
+      inputElement.classList.add('border-gray-300');
+      break;
+
+    case 'saved':
+      statusElement.textContent = '✓ Saved';
+      statusElement.className = 'ml-2 text-xs text-green-600';
+      hintElement.innerHTML = 'URL saved';
+      hintElement.className = 'text-xs text-green-600 mt-1';
+      inputElement.classList.add('border-green-500');
+      break;
+  }
+}
+
+// Test Azure VM connection manually
+async function testAzureVmConnection() {
+  if (!AppState.azureVmUrl) {
+    showNotification('Please enter an Azure VM URL first', 'warning');
+    return;
+  }
+
+  updateAzureVmUrlStatus('connecting');
+  showNotification('Testing connection to Azure VM...', 'info');
+
+  try {
+    const chats = await AzureVMAPI.fetchSubscribedChats();
+    updateAzureVmUrlStatus('success', `✓ Connected! Loaded ${chats.length} chat(s)`);
+    showNotification(`✓ Connection successful! Found ${chats.length} subscribed chat(s)`, 'success');
+
+    // Re-render settings to update stats
+    renderSettings();
+  } catch (error) {
+    updateAzureVmUrlStatus('error', error.message);
+    showNotification('Connection failed: ' + error.message, 'error');
+    console.error('Test connection error:', error);
   }
 }
 
@@ -2606,6 +3276,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Check for existing authentication
   await MicrosoftGraphAPI.checkAuthentication();
+
+  // Initialize subscribed chats from Azure VM
+  await initializeSubscribedChats();
 
   // Setup auth event listeners
   window.electronAPI.onAuthSuccess(() => {
