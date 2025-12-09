@@ -3027,9 +3027,11 @@ function renderSettings() {
             <div class="space-y-4">
                 <label class="block text-sm font-medium text-gray-700 mb-2">Theme</label>
                 <select
+                  id="theme-selector"
+                  onchange="handleThemeChange(event)"
                   class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value="light" selected>Light</option>
+                  <option value="light">Light</option>
                   <option value="dark">Dark</option>
                   <option value="auto">Auto</option>
                 </select>
@@ -3152,6 +3154,15 @@ function renderSettings() {
       </div>
     </div>
   `;
+
+  // Set the theme selector to the saved theme
+  setTimeout(() => {
+    const savedTheme = localStorage.getItem('theme') || 'light';
+    const themeSelector = document.getElementById('theme-selector');
+    if (themeSelector) {
+      themeSelector.value = savedTheme;
+    }
+  }, 0);
 }
 
 function connectWhatsApp() {
@@ -3726,6 +3737,9 @@ window.GoogleDriveAPI = GoogleDriveAPI;
 document.addEventListener('DOMContentLoaded', async () => {
   console.log('App initializing...');
 
+  // Initialize theme
+  initializeTheme();
+
   // Check for existing authentication
   await MicrosoftGraphAPI.checkAuthentication();
   await GoogleDriveAPI.checkAuthentication();
@@ -3834,4 +3848,45 @@ async function refreshSharePointDocs() {
     showNotification('Failed to sync SharePoint documents', 'error');
   }
 }
+
+// ============================================
+// DARK MODE FUNCTIONALITY
+// ============================================
+function initializeTheme() {
+  const savedTheme = localStorage.getItem('theme') || 'light';
+  applyTheme(savedTheme);
+}
+
+function applyTheme(theme) {
+  const body = document.body;
+
+  if (theme === 'dark') {
+    body.classList.add('dark-mode');
+    localStorage.setItem('theme', 'dark');
+  } else if (theme === 'light') {
+    body.classList.remove('dark-mode');
+    localStorage.setItem('theme', 'light');
+  } else if (theme === 'auto') {
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    if (prefersDark) {
+      body.classList.add('dark-mode');
+    } else {
+      body.classList.remove('dark-mode');
+    }
+    localStorage.setItem('theme', 'auto');
+  }
+}
+
+function handleThemeChange(event) {
+  const theme = event.target.value;
+  applyTheme(theme);
+  showNotification(`Theme changed to ${theme} mode`, 'success');
+}
+
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+  const currentTheme = localStorage.getItem('theme');
+  if (currentTheme === 'auto') {
+    applyTheme('auto');
+  }
+});
 
