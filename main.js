@@ -1,9 +1,10 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
-const { PublicClientApplication } = require('@azure/msal-node');
+const { PublicClientApplication, CachePersistence } = require('@azure/msal-node');
 const SimpleStore = require('./simpleStore');
 const http = require('http');
 const { google } = require('googleapis');
+const fs = require('fs');
 
 // Disable hardware acceleration to fix GPU errors on Windows
 app.disableHardwareAcceleration();
@@ -13,11 +14,31 @@ let authServer = null;
 let googleAuthServer = null;
 let googleTokens = null;
 
-// MSAL Configuration
+
+// MSAL Configuration with persistent cache
 const msalConfig = {
   auth: {
     clientId: 'd4769f4f-14be-444b-9934-f859662bc020',
     authority: 'https://login.microsoftonline.com/organizations'
+  },
+  cache: {
+    cachePlugin: {
+      beforeCacheAccess: async (cacheContext) => {
+        // Load cache from file
+        const cacheLocation = path.join(app.getPath('userData'), 'msal-cache.json');
+        if (fs.existsSync(cacheLocation)) {
+          const cacheData = fs.readFileSync(cacheLocation, 'utf-8');
+          cacheContext.tokenCache.deserialize(cacheData);
+        }
+      },
+      afterCacheAccess: async (cacheContext) => {
+        // Save cache to file
+        if (cacheContext.cacheHasChanged) {
+          const cacheLocation = path.join(app.getPath('userData'), 'msal-cache.json');
+          fs.writeFileSync(cacheLocation, cacheContext.tokenCache.serialize());
+        }
+      }
+    }
   }
 };
 
@@ -46,6 +67,61 @@ const oauth2Client = new google.auth.OAuth2(
   GOOGLE_CLIENT_SECRET,
   GOOGLE_REDIRECT_URI
 );
+
+// Load stored tokens on startup
+async function loadStoredTokens() {
+  try {
+    console.log('Loading stored tokens...');
+
+    // Check for Microsoft/OneDrive cached accounts
+    try {
+      const cache = pca.getTokenCache();
+      const accounts = await cache.getAllAccounts();
+
+      if (accounts && accounts.length > 0) {
+        console.log('✓ Found cached Microsoft account:', accounts[0].username);
+        console.log('✓ Microsoft tokens available in MSAL cache');
+      } else {
+        console.log('No cached Microsoft accounts found');
+      }
+    } catch (error) {
+      console.log('No cached Microsoft accounts found');
+    }
+
+    // Load Google tokens
+    const storedGoogleAccessToken = store.get('googleAccessToken');
+    const storedGoogleRefreshToken = store.get('googleRefreshToken');
+    const storedGoogleTokenExpiry = store.get('googleTokenExpiry');
+    const googleUserInfo = store.get('googleUserInfo');
+
+    if (storedGoogleAccessToken && storedGoogleRefreshToken) {
+      // ✅ Restore oauth2Client credentials
+      oauth2Client.setCredentials({
+        access_token: storedGoogleAccessToken,
+        refresh_token: storedGoogleRefreshToken,
+        expiry_date: storedGoogleTokenExpiry
+      });
+
+      // ✅ Restore googleTokens variable (used by download handler)
+      googleTokens = {
+        access_token: storedGoogleAccessToken,
+        refresh_token: storedGoogleRefreshToken,
+        expires_at: storedGoogleTokenExpiry,
+        scope: googleUserInfo?.scope,
+        token_type: 'Bearer'
+      };
+
+      console.log('✓ Found stored Google account:', googleUserInfo?.email || 'Unknown');
+      console.log('✓ Google tokens loaded successfully');
+    } else {
+      console.log('No stored Google tokens found');
+    }
+
+  } catch (error) {
+    console.error('Error loading tokens:', error);
+  }
+}
+
 
 // Create a local HTTP server to handle OAuth redirect
 function createAuthServer() {
@@ -407,6 +483,8 @@ function createWindow() {
 // ...existing code...
 
 async function handleAuthCode(code) {
+  console.log('\n🔐 [Microsoft Auth] Processing authorization code...');
+
   try {
     const tokenRequest = {
       code: code,
@@ -414,9 +492,14 @@ async function handleAuthCode(code) {
       redirectUri: REDIRECT_URI
     };
 
+    console.log('   → Exchanging auth code for tokens...');
     const response = await pca.acquireTokenByCode(tokenRequest);
-    store.set('accessToken', response.accessToken);
-    store.set('account', response.account);
+
+    console.log('   ✓ Token exchange successful');
+    console.log('   ✓ Account:', response.account.username);
+    console.log('   ✓ Home Account ID:', response.account.homeAccountId);
+    console.log('   ✓ Tokens cached via MSAL');
+    console.log('   ✓ Cache persisted to: msal-cache.json\n');
 
     // Notify renderer process
     const mainWindow = BrowserWindow.getAllWindows()[0];
@@ -425,17 +508,23 @@ async function handleAuthCode(code) {
       mainWindow.focus();
     }
   } catch (error) {
-    console.error('Auth error:', error);
+    console.error('\n❌ [Microsoft Auth] Failed:', error.message);
+    console.error('   Error details:', error);
     BrowserWindow.getAllWindows()[0]?.webContents.send('auth-error', error.message);
   }
 }
 
 // Handle login request from renderer
 ipcMain.handle('msal-login', async () => {
+  console.log('\n🔓 [Microsoft Auth] Starting login flow...');
+
   try {
     // Start the local auth server if not already running
     if (!authServer) {
+      console.log('   → Starting local auth server on port 3000...');
       authServer = await createAuthServer();
+    } else {
+      console.log('   → Auth server already running');
     }
 
     const authCodeUrlParams = {
@@ -444,15 +533,20 @@ ipcMain.handle('msal-login', async () => {
       prompt: 'select_account'
     };
 
+    console.log('   → Generating authorization URL...');
     const authCodeUrl = await pca.getAuthCodeUrl(authCodeUrlParams);
+
+    console.log('   → Opening browser for user authentication...');
+    console.log('   → Scopes requested:', SCOPES.join(', '));
 
     // Open in the user's default browser instead of Electron window
     const { shell } = require('electron');
     await shell.openExternal(authCodeUrl);
 
+    console.log('   ✓ Browser opened - waiting for user to complete sign-in...\n');
     return { success: true };
   } catch (error) {
-    console.error('Login error:', error);
+    console.error('\n❌ [Microsoft Auth] Login failed:', error.message);
 
     // Clean up server on error
     if (authServer) {
@@ -466,23 +560,35 @@ ipcMain.handle('msal-login', async () => {
 
 // Get stored access token (with silent refresh if expired)
 ipcMain.handle('get-access-token', async () => {
-  const account = store.get('account');
-
-  if (!account) {
-    return null;
-  }
+  console.log('\n🔍 [Microsoft Auth] Checking for cached tokens...');
 
   try {
-    // Try silent token acquisition first
+    // ✅ Query MSAL's cache for accounts instead of SimpleStore
+    const cache = pca.getTokenCache();
+    const accounts = await cache.getAllAccounts();
+
+    if (!accounts || accounts.length === 0) {
+      console.log('   ℹ No cached Microsoft accounts found\n');
+      return null;
+    }
+
+    // Use the first account (or you could pick based on username/homeAccountId)
+    const account = accounts[0];
+    console.log('   ✓ Found cached account:', account.username);
+    console.log('   → Attempting silent token acquisition...');
+
+    // Try silent token acquisition with the cached account
     const response = await pca.acquireTokenSilent({
       account: account,
       scopes: SCOPES
     });
 
-    store.set('accessToken', response.accessToken);
+    console.log('   ✓ Silent token acquisition successful');
+    console.log('   ✓ Access token retrieved (valid for ~1 hour)\n');
     return response.accessToken;
   } catch (error) {
-    console.log('Silent token acquisition failed:', error.message);
+    console.error('   ✗ Silent token acquisition failed:', error.message);
+    console.log('   ℹ User will need to sign in again\n');
     // If silent fails, return null to trigger interactive login
     return null;
   }
@@ -490,9 +596,35 @@ ipcMain.handle('get-access-token', async () => {
 
 // Logout
 ipcMain.handle('msal-logout', async () => {
-  store.delete('accessToken');
-  store.delete('account');
-  return true;
+  console.log('\n🚪 [Microsoft Auth] Logging out...');
+
+  try {
+    // ✅ Remove account from MSAL's cache
+    const cache = pca.getTokenCache();
+    const accounts = await cache.getAllAccounts();
+
+    if (accounts && accounts.length > 0) {
+      console.log(`   → Removing ${accounts.length} account(s) from cache...`);
+      // Remove all accounts from cache
+      for (const account of accounts) {
+        console.log('   → Removing:', account.username);
+        await cache.removeAccount(account);
+      }
+      console.log('   ✓ Microsoft accounts removed from cache');
+    } else {
+      console.log('   ℹ No accounts to remove');
+    }
+
+    // Clean up old SimpleStore entries (for backward compatibility)
+    store.delete('accessToken');
+    store.delete('account');
+
+    console.log('   ✓ Logout complete\n');
+    return true;
+  } catch (error) {
+    console.error('   ❌ Logout error:', error.message);
+    return false;
+  }
 });
 
 // ============================================
@@ -500,15 +632,20 @@ ipcMain.handle('msal-logout', async () => {
 // ============================================
 
 async function handleGoogleAuthCode(code) {
+  console.log('\n🔐 [Google Auth] Processing authorization code...');
+
   try {
+    console.log('   → Exchanging auth code for tokens...');
     const { tokens } = await oauth2Client.getToken(code);
     oauth2Client.setCredentials(tokens);
+
+    console.log('   ✓ Token exchange successful');
 
     // ✅ Store tokens in googleTokens variable
     googleTokens = {
       access_token: tokens.access_token,
       refresh_token: tokens.refresh_token,
-      expires_at: tokens.expiry_date, // Google already provides this
+      expires_at: tokens.expiry_date,
       scope: tokens.scope,
       token_type: tokens.token_type
     };
@@ -518,6 +655,7 @@ async function handleGoogleAuthCode(code) {
     store.set('googleRefreshToken', tokens.refresh_token);
     store.set('googleTokenExpiry', tokens.expiry_date);
 
+    console.log('   → Fetching user profile...');
     // Get user profile
     const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
     const userInfo = await oauth2.userinfo.get();
@@ -527,6 +665,11 @@ async function handleGoogleAuthCode(code) {
       name: userInfo.data.name,
       picture: userInfo.data.picture
     });
+
+    console.log('   ✓ Account:', userInfo.data.email);
+    console.log('   ✓ Name:', userInfo.data.name);
+    console.log('   ✓ Tokens cached in SimpleStore');
+    console.log('   ✓ Cache persisted to: community-curator-store.json\n');
 
     // Notify renderer process
     const mainWindow = BrowserWindow.getAllWindows()[0];
@@ -538,7 +681,8 @@ async function handleGoogleAuthCode(code) {
       mainWindow.focus();
     }
   } catch (error) {
-    console.error('Google Auth error:', error);
+    console.error('\n❌ [Google Auth] Failed:', error.message);
+    console.error('   Error details:', error);
     BrowserWindow.getAllWindows()[0]?.webContents.send('google-auth-error', error.message);
   }
 }
@@ -546,10 +690,15 @@ async function handleGoogleAuthCode(code) {
 
 // Handle Google login request from renderer
 ipcMain.handle('google-login', async () => {
+  console.log('\n🔓 [Google Auth] Starting login flow...');
+
   try {
     // Start the local auth server if not already running
     if (!googleAuthServer) {
+      console.log('   → Starting local auth server on port 3001...');
       googleAuthServer = await createGoogleAuthServer();
+    } else {
+      console.log('   → Auth server already running');
     }
 
     const authUrl = oauth2Client.generateAuthUrl({
@@ -558,13 +707,17 @@ ipcMain.handle('google-login', async () => {
       prompt: 'consent'
     });
 
+    console.log('   → Opening browser for user authentication...');
+    console.log('   → Scopes requested:', GOOGLE_SCOPES.join(', '));
+
     // Open in the user's default browser
     const { shell } = require('electron');
     await shell.openExternal(authUrl);
 
+    console.log('   ✓ Browser opened - waiting for user to complete sign-in...\n');
     return { success: true };
   } catch (error) {
-    console.error('Google Login error:', error);
+    console.error('\n❌ [Google Auth] Login failed:', error.message);
 
     // Clean up server on error
     if (googleAuthServer) {
@@ -590,6 +743,7 @@ ipcMain.handle('get-google-access-token', async () => {
 
   // Check if token is expired
   if (expiry && Date.now() >= expiry) {
+    console.log('\n🔄 [Google Auth] Access token expired, refreshing...');
     try {
       // Refresh the token
       oauth2Client.setCredentials({
@@ -602,9 +756,11 @@ ipcMain.handle('get-google-access-token', async () => {
       store.set('googleAccessToken', credentials.access_token);
       store.set('googleTokenExpiry', credentials.expiry_date);
 
+      console.log('   ✓ Token refresh successful\n');
       return credentials.access_token;
     } catch (error) {
-      console.log('Token refresh failed:', error.message);
+      console.error('   ✗ Token refresh failed:', error.message);
+      console.log('   ℹ User will need to sign in again\n');
       return null;
     }
   }
@@ -717,16 +873,27 @@ ipcMain.handle('download-google-drive-file', async (event, { fileId, fileName, m
 
 // Logout from Google
 ipcMain.handle('google-logout', async () => {
+  console.log('\n🚪 [Google Auth] Logging out...');
+
+  const userInfo = store.get('googleUserInfo');
+  if (userInfo?.email) {
+    console.log('   → Removing account:', userInfo.email);
+  }
+
   store.delete('googleAccessToken');
   store.delete('googleRefreshToken');
   store.delete('googleTokenExpiry');
   store.delete('googleUserInfo');
   oauth2Client.setCredentials({});
+
+  console.log('   ✓ Google tokens removed from cache');
+  console.log('   ✓ Logout complete\n');
   return true;
 });
 
 app.whenReady().then(() => {
   createWindow();
+    loadStoredTokens();
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
