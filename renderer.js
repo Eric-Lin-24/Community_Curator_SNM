@@ -471,15 +471,15 @@ const GoogleDriveAPI = {
       // ✅ CRITICAL: Also verify we have a valid access token
       const tokenInfo = await window.electronAPI.getGoogleAccessToken();
 
-      if (!tokenInfo || !tokenInfo.access_token) {
+      if (!tokenInfo) {
         console.warn('User info exists but no access token - session may have expired');
         AppState.googleDriveConnected = false;
         AppState.googleDriveEmail = '';
 
-        // Try to refresh the token
+        // Try to refresh the token by calling getGoogleAccessToken again
         try {
-          const refreshed = await window.electronAPI.refreshGoogleToken();
-          if (refreshed && refreshed.access_token) {
+          const refreshedToken = await window.electronAPI.getGoogleAccessToken();
+          if (refreshedToken) {
             console.log('✓ Token refreshed successfully during auth check');
             AppState.googleDriveConnected = true;
             AppState.googleDriveEmail = userInfo.email;
@@ -1559,12 +1559,6 @@ async function downloadFileFromGoogleDrive(fileId, fileName, mimeType) {
   }
 }
 
-
-
-
-
-
-
 // Helper function to format file size
 function formatFileSize(bytes) {
   if (bytes === 0) return '0 Bytes';
@@ -1818,25 +1812,25 @@ function renderDashboard() {
             <ul class="space-y-2 text-sm text-blue-50">
               <li class="flex items-center gap-2">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
                 <span>Create document collections to organize content</span>
               </li>
               <li class="flex items-center gap-2">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
                 <span>Schedule WhatsApp messages for your community</span>
               </li>
               <li class="flex items-center gap-2">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
                 <span>Use Microsoft Forms to collect data from members</span>
               </li>
               <li class="flex items-center gap-2">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
                 <span>Connect to SharePoint for document syncing</span>
               </li>
@@ -2016,7 +2010,7 @@ function renderDocuments() {
                   class="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
                 >
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m3-3v12" />
                   </svg>
                   Download
                 </button>
@@ -2279,7 +2273,7 @@ function showNewDocumentModal() {
             </button>
           </div>
 
-          <p class="text-xs text-gray-500 mt-4">After creating your document, click "Sync OneDrive" to see it here.</p>
+          <p class="text-xs text-center text-gray-500">After creating your document, click "Sync OneDrive" to see it here.</p>
         </div>
       </div>
     </div>
@@ -2374,7 +2368,7 @@ function renderScheduling() {
           <div class="flex items-center gap-3">
             <div class="p-2 ${AppState.azureVmUrl ? 'bg-green-100' : 'bg-gray-100'} rounded-lg">
               <svg class="w-5 h-5 ${AppState.azureVmUrl ? 'text-green-600' : 'text-gray-400'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2H5a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
               </svg>
             </div>
             <div>
@@ -2417,7 +2411,7 @@ function renderScheduling() {
               ${pendingMessages.map(msg => `
                 <div class="flex items-start gap-4 p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
                   <div class="p-3 bg-orange-50 text-orange-600 rounded-lg">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                   </div>
                   <div class="flex-1 min-w-0">
@@ -2701,7 +2695,7 @@ function showNewFormModal() {
             </button>
           </div>
 
-          <p class="text-xs text-gray-500 mt-4">After creating your form, click "Refresh Forms" to see it here.</p>
+          <p class="text-xs text-center text-gray-500">After creating your form, click "Refresh Forms" to see it here.</p>
         </div>
       </div>
     </div>
@@ -2950,7 +2944,7 @@ function renderSettings() {
             <div class="flex items-start gap-3 mb-4">
               <div class="p-2 bg-blue-600 rounded-lg">
                 <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2H5a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
                 </svg>
               </div>
               <div class="flex-1">
@@ -2979,7 +2973,7 @@ function renderSettings() {
                   <div id="azure-vm-url-loading" class="hidden absolute right-3 top-1/2 transform -translate-y-1/2">
                     <svg class="animate-spin h-5 w-5 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                       <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
                   </div>
                 </div>
@@ -3015,7 +3009,7 @@ function renderSettings() {
                 <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
                   <div class="flex gap-3">
                     <svg class="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z" />
                     </svg>
                     <div>
                       <p class="text-sm font-medium text-yellow-800">Not Connected</p>
@@ -3540,7 +3534,7 @@ function showHelpGuide() {
             <div>
               <h4 class="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
                 <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
                 Key Features
               </h4>
@@ -3562,7 +3556,7 @@ function showHelpGuide() {
                   <div class="flex items-start gap-3">
                     <div class="p-2 bg-green-50 rounded-lg flex-shrink-0">
                       <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h6M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h6M5 21h14a2 2 0 002-2v-1a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8v1a2 2 0 01-2 2H5" />
                     </div>
                     <div>
                       <h5 class="font-medium text-gray-800 mb-1">Message Scheduling</h5>
