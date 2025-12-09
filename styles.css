@@ -1336,11 +1336,87 @@ a:focus-visible {
 }
 
 /* Enhanced Button Styles */
-.px-4.py-2.bg-blue-600,
-.px-4.py-2.bg-green-600 {
-  border-radius: 4px;
+button {
   font-weight: 500;
-  transition: background-color 0.15s ease;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+}
+
+button:not(:disabled):hover {
+  transform: translateY(-1px);
+}
+
+button:not(:disabled):active {
+  transform: translateY(0);
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Primary Button */
+.bg-blue-600 {
+  background: linear-gradient(135deg, #00b0f4 0%, #0099d6 100%);
+  box-shadow: 0 2px 8px rgba(0, 176, 244, 0.3);
+}
+
+.bg-blue-600:hover {
+  background: linear-gradient(135deg, #0099d6 0%, #0088c2 100%);
+  box-shadow: 0 4px 12px rgba(0, 176, 244, 0.4);
+}
+
+/* Success Button */
+.bg-green-600 {
+  background: linear-gradient(135deg, #3ba55d 0%, #2d7d46 100%);
+  box-shadow: 0 2px 8px rgba(59, 165, 93, 0.3);
+}
+
+.bg-green-600:hover {
+  background: linear-gradient(135deg, #2d7d46 0%, #23623a 100%);
+  box-shadow: 0 4px 12px rgba(59, 165, 93, 0.4);
+}
+
+/* Danger Button */
+.bg-red-600 {
+  background: linear-gradient(135deg, #ed4245 0%, #da373c 100%);
+  box-shadow: 0 2px 8px rgba(237, 66, 69, 0.3);
+}
+
+.bg-red-600:hover {
+  background: linear-gradient(135deg, #da373c 0%, #c93235 100%);
+  box-shadow: 0 4px 12px rgba(237, 66, 69, 0.4);
+}
+
+/* Warning Button */
+.bg-orange-600 {
+  background: linear-gradient(135deg, #faa81a 0%, #e09200 100%);
+  box-shadow: 0 2px 8px rgba(250, 168, 26, 0.3);
+}
+
+.bg-orange-600:hover {
+  background: linear-gradient(135deg, #e09200 0%, #c27d00 100%);
+  box-shadow: 0 4px 12px rgba(250, 168, 26, 0.4);
+}
+
+/* Secondary Button */
+.bg-gray-100 {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.bg-gray-100:hover {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+/* Button with Icons */
+button svg {
+  transition: transform 0.15s ease;
+}
+
+button:hover svg {
+  transform: scale(1.1);
 }
 
 /* Status Badge Enhancement */

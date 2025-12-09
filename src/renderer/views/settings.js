@@ -137,88 +137,6 @@ function renderSettings() {
             `}
           </div>
 
-          <!-- Azure VM Integration -->
-          <div class="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl shadow-sm border-2 border-blue-200 p-6">
-            <div class="flex items-start gap-3 mb-4">
-              <div class="p-2 bg-blue-600 rounded-lg">
-                <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2H5a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
-                </svg>
-              </div>
-              <div class="flex-1">
-                <h3 class="text-lg font-semibold text-gray-800">Azure VM Integration</h3>
-                <p class="text-sm text-gray-600 mt-1">Connect to your Azure VM to fetch subscribed chat IDs for scheduling</p>
-              </div>
-            </div>
-
-            <div class="space-y-4">
-              <!-- Azure VM URL Configuration -->
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-2">
-                  Azure VM URL
-                  <span id="azure-vm-connection-status" class="ml-2 text-xs"></span>
-                </label>
-                <div class="relative">
-                  <input
-                    type="url"
-                    id="azure-vm-url-input"
-                    value="${AppState.azureVmUrl}"
-                    placeholder="https://your-azure-vm.com"
-                    oninput="handleAzureVmUrlChange()"
-                    onpaste="handleAzureVmUrlPaste(event)"
-                    class="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                  />
-                  <div id="azure-vm-url-loading" class="hidden absolute right-3 top-1/2 transform -translate-y-1/2">
-                    <svg class="animate-spin h-5 w-5 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                  </div>
-                </div>
-                <p class="text-xs mt-1" id="azure-vm-url-hint">
-                  <span class="text-blue-600 font-medium">💡 Just paste your URL</span> - it will auto-save and connect immediately
-                </p>
-              </div>
-
-              <!-- Connection Stats -->
-              ${AppState.azureVmUrl ? `
-                <div class="bg-white rounded-lg p-4 border border-blue-200">
-                  <div class="flex items-center justify-between mb-2">
-                    <span class="text-sm font-medium text-gray-700">Connection Status</span>
-                    <button
-                      onclick="testAzureVmConnection()"
-                      class="text-xs px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-                    >
-                      Test Connection
-                    </button>
-                  </div>
-                  <div class="grid grid-cols-2 gap-4 mt-3">
-                    <div>
-                      <p class="text-xs text-gray-500">Subscribed Chats</p>
-                      <p class="text-lg font-semibold text-gray-800">${AppState.subscribedChats.length}</p>
-                    </div>
-                    <div>
-                      <p class="text-xs text-gray-500">Status</p>
-                      <p class="text-sm font-medium text-green-600">✓ Configured</p>
-                    </div>
-                  </div>
-                </div>
-              ` : `
-                <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                  <div class="flex gap-3">
-                    <svg class="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z" />
-                    </svg>
-                    <div>
-                      <p class="text-sm font-medium text-yellow-800">Not Connected</p>
-                      <p class="text-xs text-yellow-700 mt-1">Paste your Azure VM URL above to enable chat scheduling features</p>
-                    </div>
-                  </div>
-                </div>
-              `}
-            </div>
-          </div>
-
           <!-- Application Settings -->
           <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <h3 class="text-lg font-semibold text-gray-800 mb-4">Application Settings</h3>
@@ -263,7 +181,6 @@ function renderSettings() {
               >
                 Save All Settings
               </button>
-              <p class="text-xs text-center text-gray-500">Azure VM URL auto-saves when you paste or type</p>
             </div>
           </div>
         </div>
@@ -293,13 +210,6 @@ function renderSettings() {
                 <span class="flex items-center gap-1 text-xs ${AppState.googleDriveConnected ? 'text-green-600' : 'text-gray-400'}">
                   <div class="w-2 h-2 rounded-full ${AppState.googleDriveConnected ? 'bg-green-600' : 'bg-gray-400'}"></div>
                   ${AppState.googleDriveConnected ? 'Connected' : 'Disconnected'}
-                </span>
-              </div>
-              <div class="flex items-center justify-between">
-                <span class="text-sm text-gray-600">Azure VM</span>
-                <span class="flex items-center gap-1 text-xs ${AppState.azureVmUrl ? 'text-green-600' : 'text-gray-400'}">
-                  <div class="w-2 h-2 rounded-full ${AppState.azureVmUrl ? 'bg-green-600' : 'bg-gray-400'}"></div>
-                  ${AppState.azureVmUrl ? 'Configured' : 'Not Configured'}
                 </span>
               </div>
             </div>

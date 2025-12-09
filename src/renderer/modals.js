@@ -9,10 +9,16 @@ let selectedCloudFiles = [];
  * @param {string} type - Type of modal to show (e.g., 'newMessage')
  */
 function showModal(type) {
+  // Redirect to dedicated schedule message page instead of showing modal
+  if (type === 'newMessage') {
+    navigateTo('scheduleMessage');
+    return;
+  }
+
   let modalHtml = '';
 
   switch(type) {
-    case 'newMessage':
+    case 'newMessage_OLD':
       // Generate options for subscribed chats
       console.log('Generating chat options from:', AppState.subscribedChats); // Debug log
 

@@ -40,6 +40,7 @@ function renderApp() {
     dashboard: { title: 'Dashboard', subtitle: 'Welcome back! Here\'s an overview of your community platform' },
     documents: { title: 'Documents', subtitle: 'Manage and sync your OneDrive files' },
     scheduling: { title: 'Message Scheduling', subtitle: 'Schedule and manage automated messages' },
+    scheduleMessage: { title: 'Schedule Message', subtitle: 'Create and schedule a new message' },
     forms: { title: 'Microsoft Forms', subtitle: 'Create forms and view responses' },
     settings: { title: 'Settings', subtitle: 'Configure your application preferences' }
   };
@@ -58,6 +59,9 @@ function renderApp() {
       break;
     case 'scheduling':
       renderScheduling();
+      break;
+    case 'scheduleMessage':
+      renderScheduleMessagePage();
       break;
     case 'forms':
       renderForms();
