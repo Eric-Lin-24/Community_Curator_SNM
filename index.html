@@ -100,6 +100,31 @@
     </div>
   </div>
 
-  <script src="renderer.js"></script>
+  <!-- Load modules in correct order -->
+
+  <!-- 1. Core State and Utilities -->
+  <script src="src/renderer/appState.js"></script>
+  <script src="src/renderer/utils.js"></script>
+
+  <!-- 2. API Modules -->
+  <script src="src/renderer/microsoftGraphAPI.js"></script>
+  <script src="src/renderer/googleDriveAPI.js"></script>
+  <script src="src/renderer/azureVMAPI.js"></script>
+
+  <!-- 3. Core Functions -->
+  <script src="src/renderer/notifications.js"></script>
+  <script src="src/renderer/helpers.js"></script>
+  <script src="src/renderer/navigation.js"></script>
+  <script src="src/renderer/modals.js"></script>
+
+  <!-- 4. View Modules -->
+  <script src="src/renderer/views/dashboard.js"></script>
+  <script src="src/renderer/views/documents.js"></script>
+  <script src="src/renderer/views/scheduling.js"></script>
+  <script src="src/renderer/views/forms.js"></script>
+  <script src="src/renderer/views/settings.js"></script>
+
+  <!-- 5. Main Application Entry Point -->
+  <script src="renderer-new.js"></script>
 </body>
 </html>
