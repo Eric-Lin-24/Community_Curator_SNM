@@ -586,12 +586,10 @@ async function scheduleMessageFromPage(event) {
           let downloadedFile;
 
           if (cloudFile.source === 'onedrive') {
-            const fullFile = AppState.documents.find(d => d.id === cloudFile.id);
-            if (!fullFile) {
-              throw new Error(`File metadata not found for: ${cloudFile.name}`);
-            }
+            // OneDrive download only needs fileId and fileName (already in cloudFile)
             downloadedFile = await downloadFileFromOneDrive(cloudFile.id, cloudFile.name);
           } else if (cloudFile.source === 'googledrive') {
+            // Google Drive needs mimeType from full file metadata
             const fullFile = AppState.documents.find(d => d.id === cloudFile.id);
             if (!fullFile) {
               throw new Error(`File metadata not found for: ${cloudFile.name}`);
