@@ -29,3 +29,10 @@ npm-debug.log*
 .env
 .env.local
 
+# Python API
+Python API/.venv
+Python API/__pycache__/
+Python API/scheduled_messages.db
+Python API/.env
+Python API/uploads/
+
