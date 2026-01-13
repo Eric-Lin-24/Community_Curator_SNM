@@ -85,7 +85,7 @@ const AzureVMAPI = {
     }
 
     if (!AppState.userId) {
-      throw new Error('User not authenticated. Please sign in with Microsoft.');
+      throw new Error('User not authenticated. Please sign in.');
     }
 
     console.log('=== PREPARING TO SEND TO AZURE VM ===');
@@ -111,7 +111,7 @@ const AzureVMAPI = {
       scheduledTsStr = String(scheduledTimestamp);
     }
 
-    console.log('Microsoft User ID:', AppState.userId);
+    console.log('User UUID:', AppState.userId);
     console.log('Username:', AppState.username);
     console.log('Target user(s):', targetUserIdStr);
     console.log('Scheduled timestamp:', scheduledTsStr);
@@ -122,8 +122,8 @@ const AzureVMAPI = {
     formData.append('target_user_id', targetUserIdStr);
     formData.append('message', message);
     formData.append('scheduled_timestamp', scheduledTsStr); // ISO 8601 format expected by FastAPI
-    formData.append('user_id', AppState.userId); // Add Microsoft user ID
-    formData.append('username', AppState.username); // Add username for filtering
+    formData.append('user_id', AppState.userId); // Add user UUID to link message to this user
+    formData.append('username', AppState.username); // Add username for reference
 
     // Add files if any
     if (files && files.length > 0) {
@@ -382,12 +382,4 @@ const AzureVMAPI = {
    * Stop polling for message updates
    */
   stopMessagePolling() {
-    if (this._pollingInterval) {
-      console.log('⏹️ Stopping message polling');
-      clearInterval(this._pollingInterval);
-      this._pollingInterval = null;
-    }
-  },
-
-  _pollingInterval: null
-};
+    if

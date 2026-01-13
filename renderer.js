@@ -40,41 +40,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Initialize theme
   initializeTheme();
 
-  // Check for saved custom auth
-  const savedUserId = localStorage.getItem('userId');
-  const savedUsername = localStorage.getItem('username');
-  const savedAuthToken = localStorage.getItem('authToken');
-
-  if (savedUserId && savedUsername && savedAuthToken) {
-    AppState.userId = savedUserId;
-    AppState.username = savedUsername;
-    AppState.customAuthToken = savedAuthToken;
-    console.log('✓ Restored user session:', savedUsername);
-  }
-
-  // If not authenticated with custom auth, show login screen
-  if (!AppState.userId || !AppState.customAuthToken) {
-    console.log('⚠️ User not authenticated - showing login screen');
-    renderLoginScreen();
-    return;
-  }
-
-  // Check Microsoft authentication status (optional)
-  await MicrosoftGraphAPI.checkAuthentication();
-  await GoogleDriveAPI.checkAuthentication();
-
-  // Initialize subscribed chats from Azure VM
-  await initializeSubscribedChats();
-
-  // Start polling for message status updates (every 30 seconds)
-  if (AppState.azureVmUrl) {
-    AzureVMAPI.startMessagePolling(30000);
-  }
-
-  // Render the app
-  renderApp();
-
-  console.log('Community Curator initialized');
+  // Always show login screen on startup - no persistent sessions
+  console.log('⚠️ Please sign in to continue');
+  renderLoginScreen();
 });
 
 /**
@@ -277,16 +245,11 @@ async function handleSignIn(event) {
     const data = await response.json();
     console.log('✓ Sign in successful:', data);
 
-    // Save auth data
+    // Save user data in memory only (not persisted)
     AppState.userId = data.user_id;
     AppState.username = data.username;
-    AppState.customAuthToken = data.token || data.access_token;
 
-    localStorage.setItem('userId', data.user_id);
-    localStorage.setItem('username', data.username);
-    localStorage.setItem('authToken', data.token || data.access_token);
-
-    console.log('✓ User session saved:', AppState.username);
+    console.log('✓ User logged in:', AppState.username);
 
     // Initialize app
     await initializeSubscribedChats();
@@ -399,23 +362,20 @@ async function handleSignUp(event) {
     const data = await response.json();
     console.log('✓ Sign up successful:', data);
 
-    // Save auth data
-    AppState.userId = data.user_id;
-    AppState.username = data.username;
-    AppState.customAuthToken = data.token || data.access_token;
+    // Show success message and redirect to sign in
+    showNotification(`Account created successfully! Please sign in with your credentials.`, 'success');
 
-    localStorage.setItem('userId', data.user_id);
-    localStorage.setItem('username', data.username);
-    localStorage.setItem('authToken', data.token || data.access_token);
+    // Reset the form
+    form.reset();
 
-    console.log('✓ User account created and session saved:', AppState.username);
-
-    // Initialize app
-    await initializeSubscribedChats();
-    if (AppState.azureVmUrl) {
-      AzureVMAPI.startMessagePolling(30000);
-    }
-    renderApp();
+    // Switch to sign-in tab after a brief delay
+    setTimeout(() => {
+      showAuthTab('signin');
+      // Pre-fill the username in the sign-in form
+      document.getElementById('signin-username').value = username;
+      button.disabled = false;
+      button.innerHTML = '<span>Sign Up</span>';
+    }, 1500);
 
   } catch (error) {
     console.error('Sign up error:', error);
@@ -432,7 +392,7 @@ async function handleSignUp(event) {
 function handleLogout() {
   console.log('🚪 Logging out user:', AppState.username);
 
-  // Clear user-specific Microsoft and Google auth
+  // Clear user-specific Microsoft and Google auth from localStorage
   if (AppState.userId) {
     localStorage.removeItem(`ms_token_${AppState.userId}`);
     localStorage.removeItem(`ms_profile_${AppState.userId}`);
@@ -440,19 +400,14 @@ function handleLogout() {
     localStorage.removeItem(`google_token_${AppState.userId}`);
   }
 
-  // Clear auth data
+  // Clear all auth data from memory
   AppState.userId = null;
   AppState.username = null;
-  AppState.customAuthToken = null;
   AppState.isAuthenticated = false;
   AppState.accessToken = null;
   AppState.userProfile = null;
   AppState.googleDriveConnected = false;
   AppState.googleDriveEmail = '';
-
-  localStorage.removeItem('userId');
-  localStorage.removeItem('username');
-  localStorage.removeItem('authToken');
 
   // Stop polling
   if (AzureVMAPI && AzureVMAPI.stopMessagePolling) {
