@@ -22,6 +22,27 @@ const GoogleDriveAPI = {
 
   async checkAuthentication() {
     try {
+      // Check if user is logged in to the app first
+      if (!AppState.userId) {
+        AppState.googleDriveConnected = false;
+        AppState.googleDriveEmail = '';
+        return false;
+      }
+
+      // Load user-specific Google auth from localStorage
+      const userGoogleEmailKey = `google_email_${AppState.userId}`;
+      const userGoogleTokenKey = `google_token_${AppState.userId}`;
+
+      const savedEmail = localStorage.getItem(userGoogleEmailKey);
+      const savedTokenInfo = localStorage.getItem(userGoogleTokenKey);
+
+      if (savedEmail && savedTokenInfo) {
+        AppState.googleDriveConnected = true;
+        AppState.googleDriveEmail = savedEmail;
+        console.log('✓ Restored Google Drive auth for user:', AppState.userId);
+        return true;
+      }
+
       // Get user info
       const userInfo = await window.electronAPI.getGoogleUserInfo();
 
@@ -46,6 +67,11 @@ const GoogleDriveAPI = {
             console.log('Token refreshed successfully during auth check');
             AppState.googleDriveConnected = true;
             AppState.googleDriveEmail = userInfo.email;
+
+            // Save to user-specific storage
+            localStorage.setItem(userGoogleEmailKey, userInfo.email);
+            localStorage.setItem(userGoogleTokenKey, JSON.stringify(tokenInfo));
+
             return true;
           }
         } catch (refreshError) {
@@ -59,9 +85,13 @@ const GoogleDriveAPI = {
       // Both user info AND valid token exist
       AppState.googleDriveConnected = true;
       AppState.googleDriveEmail = userInfo.email;
-      console.log('Google Drive authenticated:', userInfo.email);
-      return true;
 
+      // Save to user-specific storage
+      localStorage.setItem(userGoogleEmailKey, userInfo.email);
+      localStorage.setItem(userGoogleTokenKey, JSON.stringify(tokenInfo));
+
+      console.log('✓ Google Drive authenticated for user:', AppState.userId);
+      return true;
     } catch (error) {
       console.error('Google auth check error:', error);
       AppState.googleDriveConnected = false;
@@ -73,6 +103,13 @@ const GoogleDriveAPI = {
   async logout() {
     try {
       await window.electronAPI.googleLogout();
+
+      // Clear user-specific Google auth
+      if (AppState.userId) {
+        localStorage.removeItem(`google_email_${AppState.userId}`);
+        localStorage.removeItem(`google_token_${AppState.userId}`);
+      }
+
       AppState.googleDriveConnected = false;
       AppState.googleDriveEmail = '';
 

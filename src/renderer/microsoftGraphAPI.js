@@ -24,6 +24,29 @@ const MicrosoftGraphAPI = {
 
   async checkAuthentication() {
     try {
+      // Check if user is logged in to the app first
+      if (!AppState.userId) {
+        AppState.isAuthenticated = false;
+        AppState.accessToken = null;
+        AppState.userProfile = null;
+        return;
+      }
+
+      // Load user-specific Microsoft auth from localStorage
+      const userMsTokenKey = `ms_token_${AppState.userId}`;
+      const userMsProfileKey = `ms_profile_${AppState.userId}`;
+
+      const savedToken = localStorage.getItem(userMsTokenKey);
+      const savedProfile = localStorage.getItem(userMsProfileKey);
+
+      if (savedToken && savedProfile) {
+        AppState.accessToken = savedToken;
+        AppState.userProfile = JSON.parse(savedProfile);
+        AppState.isAuthenticated = true;
+        console.log('✓ Restored Microsoft auth for user:', AppState.userId);
+        return;
+      }
+
       const token = await window.electronAPI.getAccessToken();
 
       if (token) {
@@ -33,8 +56,12 @@ const MicrosoftGraphAPI = {
         // Fetch user profile
         await this.getUserProfile();
 
-        console.log('User authenticated:', AppState.userProfile);
-        showNotification('Successfully logged in!', 'success');
+        // Save to user-specific storage
+        localStorage.setItem(userMsTokenKey, token);
+        localStorage.setItem(userMsProfileKey, JSON.stringify(AppState.userProfile));
+
+        console.log('✓ Microsoft authenticated for user:', AppState.userId);
+        showNotification('Successfully connected to Microsoft!', 'success');
         renderApp();
       } else {
         AppState.isAuthenticated = false;
@@ -49,13 +76,20 @@ const MicrosoftGraphAPI = {
   async logout() {
     try {
       await window.electronAPI.logout();
+
+      // Clear user-specific Microsoft auth
+      if (AppState.userId) {
+        localStorage.removeItem(`ms_token_${AppState.userId}`);
+        localStorage.removeItem(`ms_profile_${AppState.userId}`);
+      }
+
       AppState.isAuthenticated = false;
       AppState.accessToken = null;
       AppState.userProfile = null;
       AppState.documents = [];
       AppState.microsoftForms = [];
 
-      showNotification('Logged out successfully', 'success');
+      showNotification('Disconnected from Microsoft', 'success');
       renderApp();
     } catch (error) {
       console.error('Logout error:', error);
@@ -121,6 +155,7 @@ const MicrosoftGraphAPI = {
         name: profile.displayName || profile.userPrincipalName,
         email: profile.mail || profile.userPrincipalName
       };
+
       return AppState.userProfile;
     } catch (error) {
       console.error('Error fetching user profile:', error);

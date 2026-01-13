@@ -84,6 +84,10 @@ const AzureVMAPI = {
       throw new Error('Azure VM URL not configured. Please set it in Settings.');
     }
 
+    if (!AppState.userId) {
+      throw new Error('User not authenticated. Please sign in with Microsoft.');
+    }
+
     console.log('=== PREPARING TO SEND TO AZURE VM ===');
 
     // Normalize targetUserId: accept string, array, or single value
@@ -107,6 +111,8 @@ const AzureVMAPI = {
       scheduledTsStr = String(scheduledTimestamp);
     }
 
+    console.log('Microsoft User ID:', AppState.userId);
+    console.log('Username:', AppState.username);
     console.log('Target user(s):', targetUserIdStr);
     console.log('Scheduled timestamp:', scheduledTsStr);
     console.log('Files received in scheduleMessage:', files ? files.length || 0 : 0);
@@ -116,6 +122,8 @@ const AzureVMAPI = {
     formData.append('target_user_id', targetUserIdStr);
     formData.append('message', message);
     formData.append('scheduled_timestamp', scheduledTsStr); // ISO 8601 format expected by FastAPI
+    formData.append('user_id', AppState.userId); // Add Microsoft user ID
+    formData.append('username', AppState.username); // Add username for filtering
 
     // Add files if any
     if (files && files.length > 0) {
@@ -139,6 +147,7 @@ const AzureVMAPI = {
 
     console.log('Sending POST to:', endpoint);
     console.log('Payload summary:', {
+      user_id: AppState.userId,
       target_user_id: targetUserIdStr,
       message: message,
       scheduled_timestamp: scheduledTsStr,
@@ -172,6 +181,7 @@ const AzureVMAPI = {
     const result = await response.json();
     console.log('=== MESSAGE SCHEDULED SUCCESSFULLY ===');
     console.log('Response from server:', result);
+    console.log('✓ Message linked to user:', AppState.userProfile?.email);
     const uploadedCount = files ? files.length || 0 : 0;
     console.log(`Message scheduled with ${uploadedCount} file(s) uploaded`);
     if (uploadedCount > 0) {
@@ -259,5 +269,125 @@ const AzureVMAPI = {
       console.error('getPendingMessages error:', err);
       throw err;
     }
-  }
+  },
+
+  /**
+   * Sync pending messages from server and update local state
+   * Updates status for messages that have been sent
+   * Filters messages by current user ID
+   */
+  async syncMessagesFromServer() {
+    try {
+      if (!AppState.userId) {
+        console.log('⚠️ No user ID - skipping message sync');
+        return;
+      }
+
+      const serverMessages = await this.getPendingMessages();
+
+      if (!Array.isArray(serverMessages)) {
+        console.warn('Server returned non-array for pending messages:', serverMessages);
+        return;
+      }
+
+      // Filter messages to only show this user's messages
+      const userMessages = serverMessages.filter(msg => msg.user_id === AppState.userId);
+
+      console.log(`📊 Syncing ${serverMessages.length} total message(s) from server...`);
+      console.log(`👤 Found ${userMessages.length} message(s) belonging to user: ${AppState.username}`);
+
+      let updatedCount = 0;
+
+      // Update local messages based on server state
+      userMessages.forEach(serverMsg => {
+        const localMsg = AppState.scheduledMessages.find(m => m.id === serverMsg.id);
+
+        if (localMsg) {
+          // Check if status changed from pending to sent
+          if (localMsg.status !== 'sent' && serverMsg.is_sent === true) {
+            console.log(`✓ Message ${serverMsg.id} marked as SENT on server`);
+            localMsg.status = 'sent';
+            localMsg.sent_at = serverMsg.sent_at || new Date().toISOString();
+            updatedCount++;
+          } else if (serverMsg.is_sent === false && localMsg.status !== 'pending') {
+            // Update back to pending if server says not sent
+            localMsg.status = 'pending';
+          }
+        } else {
+          // Add new message from server if not in local state
+          console.log(`➕ Adding new message from server: ${serverMsg.id}`);
+          AppState.scheduledMessages.push({
+            id: serverMsg.id,
+            recipient: Array.isArray(serverMsg.target_user_id)
+              ? serverMsg.target_user_id.join(', ')
+              : serverMsg.target_user_id,
+            message_content: serverMsg.message,
+            content: serverMsg.message,
+            scheduled_time: serverMsg.scheduled_timestamp,
+            scheduled_timestamp: serverMsg.scheduled_timestamp,
+            target_user_id: serverMsg.target_user_id,
+            status: serverMsg.is_sent ? 'sent' : 'pending',
+            created_at: serverMsg.created_at || new Date().toISOString(),
+            sent_at: serverMsg.sent_at,
+            file_paths: serverMsg.file_paths || [],
+            platform: 'whatsapp' // default
+          });
+          updatedCount++;
+        }
+      });
+
+      if (updatedCount > 0) {
+        console.log(`✓ Updated ${updatedCount} message(s) from server sync`);
+
+        // Re-render scheduling view if we're on that page
+        if (AppState.currentView === 'scheduling' && typeof renderScheduling === 'function') {
+          renderScheduling();
+        }
+
+        // Show notification for newly sent messages
+        if (updatedCount > 0 && typeof showNotification === 'function') {
+          showNotification(`${updatedCount} message(s) updated from server`, 'success');
+        }
+      }
+
+      return userMessages;
+    } catch (error) {
+      console.error('Error syncing messages from server:', error);
+      // Don't throw - we don't want polling to break the app
+    }
+  },
+
+  /**
+   * Start polling for message updates
+   * @param {number} intervalMs - Polling interval in milliseconds (default: 30 seconds)
+   */
+  startMessagePolling(intervalMs = 30000) {
+    // Clear any existing polling
+    this.stopMessagePolling();
+
+    console.log(`🔄 Starting message polling (every ${intervalMs / 1000}s)`);
+
+    // Do initial sync
+    this.syncMessagesFromServer();
+
+    // Start interval
+    this._pollingInterval = setInterval(() => {
+      if (AppState.azureVmUrl) {
+        this.syncMessagesFromServer();
+      }
+    }, intervalMs);
+  },
+
+  /**
+   * Stop polling for message updates
+   */
+  stopMessagePolling() {
+    if (this._pollingInterval) {
+      console.log('⏹️ Stopping message polling');
+      clearInterval(this._pollingInterval);
+      this._pollingInterval = null;
+    }
+  },
+
+  _pollingInterval: null
 };
