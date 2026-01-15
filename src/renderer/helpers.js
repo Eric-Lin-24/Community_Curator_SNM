@@ -2,6 +2,32 @@
 // Contains utility functions for document management, subscribed chats, and help guide
 
 /**
+ * Get human-readable recipient name from target_user_id
+ * @param {string|string[]} targetUserId - The target user ID(s)
+ * @returns {string} Human-readable name or the user_id if not found
+ */
+function getRecipientName(targetUserId) {
+  if (!targetUserId) return 'Unknown';
+
+  // Handle array of user IDs
+  if (Array.isArray(targetUserId)) {
+    const names = targetUserId.map(id => {
+      const chat = (AppState.subscribedChats || []).find(c => c.user_id === id);
+      return chat ? (chat.name || chat.chat_name || id) : id;
+    });
+    return names.join(', ');
+  }
+
+  // Handle single user ID
+  const chat = (AppState.subscribedChats || []).find(c => c.user_id === targetUserId);
+  if (chat) {
+    return chat.name || chat.chat_name || targetUserId;
+  }
+
+  return targetUserId;
+}
+
+/**
  * Switch between document sources (OneDrive or Google Drive)
  * @param {string} source - Document source ('onedrive' or 'googledrive')
  */

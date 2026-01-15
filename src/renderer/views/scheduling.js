@@ -27,7 +27,7 @@ function renderScheduling() {
               <label class="form-label">Recipient</label>
               <select id="quick-recipient">
                 <option value="">Select a chat...</option>
-                ${subscribedChats.map(chat => `<option value="${chat.id}">${chat.name || chat.id}</option>`).join('')}
+                ${subscribedChats.map(chat => `<option value="${chat.user_id}" data-chat-id="${chat.chat_id}" data-platform="${chat.platform || 'whatsapp'}">${chat.name || chat.id}</option>`).join('')}
               </select>
             </div>
             
@@ -75,12 +75,18 @@ function renderScheduling() {
             </div>
           ` : `
             <div class="flex flex-col">
-              ${messages.map((msg, index) => `
+              ${messages.map((msg, index) => {
+                // Get human-readable recipient name from target_user_id
+                const recipientName = msg.target_user_id
+                  ? getRecipientName(msg.target_user_id)
+                  : (msg.recipient || 'Unknown');
+
+                return `
                 <div class="message-item" style="animation: slideUp 0.3s ease ${index * 0.05}s both;">
                   <div class="message-status ${msg.status === 'sent' ? 'sent' : 'pending'}"></div>
                   <div class="message-content">
                     <div class="flex justify-between items-start mb-1">
-                      <span class="message-recipient">${msg.recipient || 'Unknown'}</span>
+                      <span class="message-recipient">${recipientName}</span>
                       <span class="badge ${msg.status === 'sent' ? 'badge-success' : 'badge-warning'}">${msg.status || 'Pending'}</span>
                     </div>
                     <p class="message-preview">${msg.message_content || ''}</p>
@@ -92,7 +98,7 @@ function renderScheduling() {
                     </button>
                   </div>
                 </div>
-              `).join('')}
+              `;}).join('')}
             </div>
           `}
         </div>
@@ -150,15 +156,24 @@ async function quickScheduleMessage() {
   try {
     showNotification('Scheduling message...', 'info');
 
+    console.log('🔍 Quick Schedule - Selected recipient (user_id):', recipient);
+
+    // Find the chat by user_id for display purposes
+    const selectedChat = AppState.subscribedChats.find(c => c.user_id === recipient);
+    console.log('✅ Found chat for user_id:', selectedChat);
+
     const scheduledTimestamp = new Date(datetime).toISOString();
+
+    console.log('📤 Sending to Azure VM with target_user_id:', recipient);
     await AzureVMAPI.scheduleMessage(recipient, message, scheduledTimestamp, []);
 
     AppState.scheduledMessages.push({
       id: generateId(),
-      recipient: AppState.subscribedChats.find(c => c.id === recipient)?.name || recipient,
+      recipient: selectedChat?.name || recipient,
       message_content: message,
       scheduled_time: scheduledTimestamp,
-      status: 'pending'
+      status: 'pending',
+      target_user_id: recipient
     });
 
     showNotification('Message scheduled successfully!', 'success');

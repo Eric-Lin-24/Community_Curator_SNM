@@ -14,8 +14,10 @@ function renderScheduleMessagePage() {
     const chatId = chat.id || chat.chat_id || `chat_${index}`;
     const chatName = chat.name || chat.chat_name || chatId;
     const platform = chat.platform || 'whatsapp';
+    const userId = chat.user_id || '';
 
-    return `<option value="${chatId}" data-platform="${platform}">${chatName} (${platform})</option>`;
+    // Use user_id as the option value so we send the correct target_user_id
+    return `<option value="${userId}" data-platform="${platform}" data-user-id="${userId}" data-chat-id="${chat.chat_id || ''}">${chatName} (${platform})</option>`;
   }).join('');
 
   content.innerHTML = `
@@ -560,9 +562,32 @@ async function scheduleMessageFromPage(event) {
   // Get the target_user_id from selected chat
   let targetUserId = null;
   if (selectedChatSelect && selectedChatSelect.value) {
+    console.log('🔍 Looking for chat with id/chat_id:', selectedChatSelect.value);
+    console.log('📋 All available chats:', AppState.subscribedChats);
+
     const selectedChat = (AppState.subscribedChats || []).find(c => c.id === selectedChatSelect.value || c.chat_id === selectedChatSelect.value);
-    if (selectedChat && selectedChat.user_id) {
-      targetUserId = selectedChat.user_id;
+
+    console.log('✅ Found selected chat:', selectedChat);
+
+    if (selectedChat) {
+      console.log('📊 Chat fields breakdown:', {
+        id: selectedChat.id,
+        chat_id: selectedChat.chat_id,
+        user_id: selectedChat.user_id,
+        name: selectedChat.name
+      });
+
+      if (selectedChat.user_id) {
+        targetUserId = selectedChat.user_id;
+        console.log('✅ SUCCESS: Using user_id as target_user_id:', targetUserId);
+        console.log('   (NOT using chat_id which is:', selectedChat.chat_id, ')');
+      } else {
+        console.error('❌ ERROR: Selected chat has NO user_id field!');
+        console.error('   This means the backend is not returning user_id');
+        console.error('   Full chat object:', selectedChat);
+      }
+    } else {
+      console.error('❌ ERROR: Could not find chat with value:', selectedChatSelect.value);
     }
   }
 
@@ -570,15 +595,25 @@ async function scheduleMessageFromPage(event) {
     const chatByName = (AppState.subscribedChats || []).find(c =>
       c.name === recipient || c.id === recipient || c.chat_id === recipient
     );
+    console.log('Chat found by name/id:', chatByName);
     if (chatByName && chatByName.user_id) {
       targetUserId = chatByName.user_id;
+      console.log('✓ Using user_id as target_user_id:', targetUserId);
+      console.log('  (chat_id was:', chatByName.chat_id, ')');
+    } else if (chatByName) {
+      console.error('⚠️ Chat found by name has no user_id field!', chatByName);
     }
   }
 
   if (!targetUserId) {
+    console.error('❌ FINAL ERROR: Could not determine target_user_id');
+    console.error('Available chats:', AppState.subscribedChats);
     showNotification('Could not determine target user. Please select a chat from the dropdown.', 'error');
     return;
   }
+
+  console.log('📤 FINAL: Sending message to target_user_id:', targetUserId);
+  console.log('   (This should be a user_id, NOT a chat_id!)');
 
   const scheduledTimestamp = new Date(scheduledTime).toISOString(); // ✅ ISO for server
   const localFiles = fileInput && fileInput.files.length > 0 ? Array.from(fileInput.files) : [];

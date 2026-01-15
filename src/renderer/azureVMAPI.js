@@ -49,17 +49,22 @@ const AzureVMAPI = {
         throw new Error('Invalid response format from Azure VM');
       }
 
-      const formattedChats = rawChats.map(chat => ({
-        id: chat.chat_id || chat.id,
-        name: chat.chat_name || chat.name || chat.chat_id || 'Unknown Chat',
-        platform: chat.platform || 'whatsapp',
-        type: chat.type || 'group',
-        user_id: chat.user_id,
-        from_sender: chat.from_sender || chat.user_id,
-        created_at: chat.created_at
-      }));
+      // Map your schema (user_id, chat_id, chat_name, created_at) to internal format
+      const formattedChats = rawChats.map(chat => {
+        console.log('Raw chat from server:', chat); // Debug: see what backend actually returns
+        return {
+          id: chat.chat_id || chat.id,           // Use chat_id for display/selection
+          chat_id: chat.chat_id,                 // Keep original chat_id
+          name: chat.chat_name || chat.name || chat.chat_id || 'Unknown Chat',  // Use chat_name
+          platform: chat.platform || 'whatsapp',  // Default to whatsapp if not specified
+          type: chat.type || 'group',             // Default to group if not specified
+          user_id: chat.user_id,                  // user_id for targeting messages - THIS IS THE IMPORTANT ONE
+          from_sender: chat.from_sender || chat.user_id, // Track who subscribed to this chat
+          created_at: chat.created_at             // Keep created_at for reference
+        };
+      });
 
-      console.log('Formatted chats:', formattedChats);
+      console.log('Formatted chats with user_id:', formattedChats); // Debug: verify user_id is present
       AppState.subscribedChats = formattedChats;
 
       if (AppState.lastSync) {
@@ -291,11 +296,28 @@ const AzureVMAPI = {
           }
         } else {
           console.log(`➕ Adding new message from server: ${serverMsg.id}`);
+
+          // 🔍 Look up human-readable name from subscribed chats using target_user_id
+          let displayName = null;
+          const targetId = Array.isArray(serverMsg.target_user_id)
+            ? serverMsg.target_user_id[0]
+            : serverMsg.target_user_id;
+
+          if (targetId && AppState.subscribedChats) {
+            const matchingChat = AppState.subscribedChats.find(chat => chat.user_id === targetId);
+            if (matchingChat) {
+              displayName = matchingChat.name || matchingChat.chat_name;
+              console.log(`✅ Found name for user_id ${targetId}: "${displayName}"`);
+            } else {
+              console.log(`⚠️ No subscribed chat found for user_id: ${targetId}`);
+            }
+          }
+
           AppState.scheduledMessages.push({
             id: serverMsg.id,
-            recipient: Array.isArray(serverMsg.target_user_id)
+            recipient: displayName || (Array.isArray(serverMsg.target_user_id)
               ? serverMsg.target_user_id.join(', ')
-              : serverMsg.target_user_id,
+              : serverMsg.target_user_id),
             message_content: serverMsg.message,
             content: serverMsg.message,
             scheduled_time: serverMsg.scheduled_timestamp,
