@@ -12,19 +12,15 @@ from dotenv import load_dotenv
 import shutil
 from pathlib import Path
 
-from database import get_db, init_db, get_user_by_username
+from database import get_db, init_db
 from models import ScheduledMessage, SubscribedUser
 from schemas import (
     ScheduleMessageRequest,
     ScheduleMessageResponse,
     SubscribeUserRequest,
-    SubscribeUserResponse,
-    User,
-    UserCreate,
-    UserSignIn
+    SubscribeUserResponse
 )
 from scheduler import start_message_scheduler
-from auth import create_user, verify_password
 
 # Load environment variables
 load_dotenv()
@@ -52,23 +48,6 @@ async def startup_event():
     """Initialize database and start background tasks on startup"""
     init_db()
     start_message_scheduler(app)
-
-
-@app.post("/register", response_model=User, status_code=status.HTTP_201_CREATED)
-def register(user: UserCreate, db: Session = Depends(get_db)):
-    db_user = get_user_by_username(db, username=user.username)
-    if db_user:
-        raise HTTPException(status_code=400, detail="Username already registered")
-    return create_user(db=db, user=user)
-
-@app.post("/sign-in", response_model=User)
-def sign_in(user: UserSignIn, db: Session = Depends(get_db)):
-    db_user = get_user_by_username(db, username=user.username)
-    if not db_user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
-    if not verify_password(user.password, db_user.hashed_password):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
-    return db_user
 
 
 @app.post("/schedule-message", response_model=ScheduleMessageResponse)

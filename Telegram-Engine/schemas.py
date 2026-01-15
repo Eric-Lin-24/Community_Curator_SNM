@@ -32,22 +32,6 @@ class SubscribeUserResponse(BaseModel):
     class Config:
         from_attributes = True
 
-class User(BaseModel):
-    username: str
-    uuid: str
-
-
-    class Config:
-        from_attributes = True
-
-class UserCreate(BaseModel):
-    username: str
-    password: str
-
-class UserSignIn(BaseModel):
-    username: str
-    password: str
-
 class Token(BaseModel):
     access_token: str
     token_type: str

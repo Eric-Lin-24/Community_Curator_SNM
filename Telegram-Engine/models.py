@@ -23,13 +23,4 @@ class SubscribedUser(Base):
     chat_name = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-class User(Base):
-    __tablename__ = "users"
-
-    id = Column(Integer, primary_key=True, index=True)
-    username = Column(String, unique=True, index=True)
-    hashed_password = Column(String)
-    uuid = Column(String)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
 

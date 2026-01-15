@@ -8,7 +8,7 @@ import os
 # For PostgreSQL, set DATABASE_URL environment variable to your PostgreSQL connection string
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "sqlite:///./scheduled_messages.db"
+    "sqlite:///./accounts.db"
 )
 
 # SQLite requires check_same_thread=False for FastAPI
