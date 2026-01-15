@@ -47,6 +47,12 @@ const AppState = {
   whatsappPhone: '',
   azureVmUrl: 'http://20.153.191.11:8000',
 
+  // Custom User Authentication (Backend)
+  userId: null, // User ID from backend authentication
+  username: null, // Username from backend authentication
+  authenticationUrl: 'http://20.153.191.11:8080', // Backend authentication URL
+  customAuthToken: null, // Custom auth token (if needed in future)
+
   // Templates
   templates: [],
 
