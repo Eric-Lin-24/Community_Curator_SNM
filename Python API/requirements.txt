@@ -1,9 +1,0 @@
-fastapi
-uvicorn[standard]
-sqlalchemy
-python-multipart
-pydantic
-aiofiles
-python-telegram-bot
-requests
-python-dotenv

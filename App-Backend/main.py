@@ -20,20 +20,14 @@ logger = logging.getLogger(__name__)
 
 
 def run_api_server():
-    """Run the FastAPI server on port 8000"""
+    """Run the FastAPI server on port 8080"""
     from api import app
     uvicorn.run(
         app,
         host="0.0.0.0",
-        port=8000,
+        port=8080,
         log_level="warning"
     )
-
-
-def run_telegram_bot():
-    """Run the Telegram bot"""
-    from telegram_bot import main as telegram_main
-    telegram_main()
 
 
 def signal_handler(sig, frame):
@@ -50,28 +44,15 @@ def main():
 
     # Create processes for both services
     api_process = multiprocessing.Process(target=run_api_server, name="API-Server")
-    bot_process = multiprocessing.Process(target=run_telegram_bot, name="Telegram-Bot")
-
+    
     try:
         logger.info("="*60)
         logger.info("Starting Scheduled Message System")
         logger.info("="*60)
 
-        logger.info("Starting FastAPI server on port 8000...")
+        logger.info("Starting FastAPI server on port 8080...")
         api_process.start()
         time.sleep(1)  # Give API server a moment to start
-
-        logger.info("Starting Telegram bot...")
-        bot_process.start()
-        time.sleep(1)  # Give Telegram bot a moment to start
-
-        logger.info("\n" + "="*60)
-        logger.info("Both services are running successfully!")
-        logger.info("  - FastAPI: http://localhost:8000")
-        logger.info("  - API Docs: http://localhost:8000/docs")
-        logger.info("  - Telegram Bot: Running in polling mode")
-        logger.info("\nPress Ctrl+C to stop both services")
-        logger.info("="*60 + "\n")
 
         # Monitor processes and restart if they crash
         while True:
@@ -79,12 +60,7 @@ def main():
                 logger.warning("API server process died. Restarting...")
                 api_process = multiprocessing.Process(target=run_api_server, name="API-Server")
                 api_process.start()
-
-            if not bot_process.is_alive():
-                logger.warning("Telegram bot process died. Restarting...")
-                bot_process = multiprocessing.Process(target=run_telegram_bot, name="Telegram-Bot")
-                bot_process.start()
-
+            
             time.sleep(5)  # Check every 5 seconds
 
     except KeyboardInterrupt:
@@ -100,12 +76,6 @@ def main():
             if api_process.is_alive():
                 api_process.kill()
 
-        logger.info("Stopping Telegram bot...")
-        if bot_process.is_alive():
-            bot_process.terminate()
-            bot_process.join(timeout=5)
-            if bot_process.is_alive():
-                bot_process.kill()
 
         logger.info("All services stopped.")
         logger.info("="*60)
