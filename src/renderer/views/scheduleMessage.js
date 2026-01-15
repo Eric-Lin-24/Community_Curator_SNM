@@ -10,7 +10,7 @@ function renderScheduleMessagePage() {
   const content = document.getElementById('content');
 
   // Generate options for subscribed chats
-  const subscribedChatsOptions = AppState.subscribedChats.map((chat, index) => {
+  const subscribedChatsOptions = (AppState.subscribedChats || []).map((chat, index) => {
     const chatId = chat.id || chat.chat_id || `chat_${index}`;
     const chatName = chat.name || chat.chat_name || chatId;
     const platform = chat.platform || 'whatsapp';
@@ -81,7 +81,7 @@ function renderScheduleMessagePage() {
                   Refresh
                 </button>
               </div>
-              ${AppState.subscribedChats.length > 0 ? `
+              ${(AppState.subscribedChats || []).length > 0 ? `
                 <select
                   id="msg-subscribed-chat-page"
                   class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
@@ -266,14 +266,20 @@ function renderScheduleMessagePage() {
     </div>
   `;
 
-  // Add character counter
-  const contentTextarea = document.getElementById('msg-content-page');
-  const charCount = document.getElementById('char-count-page');
-  if (contentTextarea && charCount) {
-    contentTextarea.addEventListener('input', () => {
-      charCount.textContent = `${contentTextarea.value.length} characters`;
-    });
-  }
+  // Add character counter - use setTimeout to ensure DOM is ready
+  setTimeout(() => {
+    const contentTextarea = document.getElementById('msg-content-page');
+    const charCount = document.getElementById('char-count-page');
+    if (contentTextarea && charCount) {
+      contentTextarea.addEventListener('input', () => {
+        charCount.textContent = `${contentTextarea.value.length} characters`;
+      });
+
+      // Ensure textarea is focusable and clickable
+      contentTextarea.style.pointerEvents = 'auto';
+      contentTextarea.style.zIndex = '1';
+    }
+  }, 0);
 }
 
 // Store for cloud files selected for attachment
@@ -292,10 +298,10 @@ function onSubscribedChatSelectPage() {
     const chatId = select.value;
     const platform = selectedOption.getAttribute('data-platform') || 'whatsapp';
 
-    const chat = AppState.subscribedChats.find(c => c.id === chatId);
+    const chat = (AppState.subscribedChats || []).find(c => c.id === chatId || c.chat_id === chatId);
     if (chat) {
-      recipientInput.value = chat.name || chat.id;
-      const platformLower = platform.toLowerCase();
+      recipientInput.value = chat.name || chat.id || chat.chat_id;
+      const platformLower = String(platform).toLowerCase();
       if (['whatsapp', 'sms', 'telegram', 'email'].includes(platformLower)) {
         platformSelect.value = platformLower;
       }
@@ -310,7 +316,7 @@ async function refreshSubscribedChatsInPage() {
   try {
     showNotification('Refreshing subscribed chats...', 'info');
     await AzureVMAPI.fetchSubscribedChats();
-    showNotification(`Loaded ${AppState.subscribedChats.length} subscribed chat(s)`, 'success');
+    showNotification(`Loaded ${(AppState.subscribedChats || []).length} subscribed chat(s)`, 'success');
     renderScheduleMessagePage();
   } catch (error) {
     showNotification('Failed to refresh: ' + error.message, 'error');
@@ -328,7 +334,6 @@ function toggleRecipientInputPage() {
  * Handle file selection from local file input
  */
 function handleFileSelectPage(event) {
-  const files = event.target.files;
   updateFileListDisplay();
 }
 
@@ -372,16 +377,16 @@ async function loadCloudFilesForPickerPage() {
       files = await MicrosoftGraphAPI.getOneDriveFiles();
     }
 
-    if (files.length === 0) {
+    if (!files || files.length === 0) {
       cloudFileList.innerHTML = '<p class="text-sm text-gray-500 text-center py-8">No files found. Please connect to OneDrive or Google Drive.</p>';
       return;
     }
 
     cloudFileList.innerHTML = files.map(file => `
-      <div class="flex items-center gap-3 p-3 hover:bg-gray-50 rounded-lg border border-gray-200 cursor-pointer transition-colors" onclick="toggleCloudFileSelectionPage('${file.id}', '${file.title.replace(/'/g, "\\'")}', '${file.source}')">
-        <input type="checkbox" id="cloud-file-page-${file.id}" class="w-4 h-4 text-blue-600" onclick="event.stopPropagation(); toggleCloudFileSelectionPage('${file.id}', '${file.title.replace(/'/g, "\\'")}', '${file.source}')">
+      <div class="flex items-center gap-3 p-3 hover:bg-gray-50 rounded-lg border border-gray-200 cursor-pointer transition-colors" onclick="toggleCloudFileSelectionPage('${file.id}', '${(file.title || '').replace(/'/g, "\\'")}', '${file.source}')">
+        <input type="checkbox" id="cloud-file-page-${file.id}" class="w-4 h-4 text-blue-600" onclick="event.stopPropagation(); toggleCloudFileSelectionPage('${file.id}', '${(file.title || '').replace(/'/g, "\\'")}', '${file.source}')">
         <div class="flex-1 min-w-0">
-          <p class="text-sm font-medium text-gray-700 truncate">${file.title}</p>
+          <p class="text-sm font-medium text-gray-700 truncate">${file.title || 'Untitled'}</p>
           <p class="text-xs text-gray-500">${file.source === 'onedrive' ? 'OneDrive' : 'Google Drive'} • ${formatFileSize(file.size || 0)}</p>
         </div>
       </div>
@@ -535,6 +540,11 @@ async function scheduleMessageFromPage(event) {
     return;
   }
 
+  if (!AppState.userId) {
+    showNotification('You must be signed in to schedule messages', 'error');
+    return;
+  }
+
   const platform = document.getElementById('msg-platform-page').value;
   const recipient = document.getElementById('msg-recipient-page').value;
   const content = document.getElementById('msg-content-page').value;
@@ -550,14 +560,14 @@ async function scheduleMessageFromPage(event) {
   // Get the target_user_id from selected chat
   let targetUserId = null;
   if (selectedChatSelect && selectedChatSelect.value) {
-    const selectedChat = AppState.subscribedChats.find(c => c.id === selectedChatSelect.value);
+    const selectedChat = (AppState.subscribedChats || []).find(c => c.id === selectedChatSelect.value || c.chat_id === selectedChatSelect.value);
     if (selectedChat && selectedChat.user_id) {
       targetUserId = selectedChat.user_id;
     }
   }
 
   if (!targetUserId && recipient) {
-    const chatByName = AppState.subscribedChats.find(c =>
+    const chatByName = (AppState.subscribedChats || []).find(c =>
       c.name === recipient || c.id === recipient || c.chat_id === recipient
     );
     if (chatByName && chatByName.user_id) {
@@ -570,7 +580,7 @@ async function scheduleMessageFromPage(event) {
     return;
   }
 
-  const scheduledTimestamp = new Date(scheduledTime).toISOString();
+  const scheduledTimestamp = new Date(scheduledTime).toISOString(); // ✅ ISO for server
   const localFiles = fileInput && fileInput.files.length > 0 ? Array.from(fileInput.files) : [];
 
   showNotification('Preparing files and scheduling message...', 'info');
@@ -586,16 +596,10 @@ async function scheduleMessageFromPage(event) {
           let downloadedFile;
 
           if (cloudFile.source === 'onedrive') {
-            const fullFile = AppState.documents.find(d => d.id === cloudFile.id);
-            if (!fullFile) {
-              throw new Error(`File metadata not found for: ${cloudFile.name}`);
-            }
             downloadedFile = await downloadFileFromOneDrive(cloudFile.id, cloudFile.name);
           } else if (cloudFile.source === 'googledrive') {
-            const fullFile = AppState.documents.find(d => d.id === cloudFile.id);
-            if (!fullFile) {
-              throw new Error(`File metadata not found for: ${cloudFile.name}`);
-            }
+            const fullFile = (AppState.documents || []).find(d => d.id === cloudFile.id);
+            if (!fullFile) throw new Error(`File metadata not found for: ${cloudFile.name}`);
             downloadedFile = await downloadFileFromGoogleDrive(cloudFile.id, cloudFile.name, fullFile.mimeType);
           } else {
             throw new Error(`Unknown file source: ${cloudFile.source}`);
@@ -625,14 +629,16 @@ async function scheduleMessageFromPage(event) {
       recipient: recipient,
       content: content,
       message_content: content,
-      scheduled_time: scheduledTime,
-      scheduled_timestamp: scheduledTimestamp,
+      scheduled_time: scheduledTime, // UI input string
+      scheduled_timestamp: scheduledTimestamp, // server ISO
       target_user_id: targetUserId,
       status: result.status || 'pending',
       created_at: new Date().toISOString(),
+      from_sender: AppState.userId,
       server_response: result
     };
 
+    AppState.scheduledMessages = AppState.scheduledMessages || [];
     AppState.scheduledMessages.push(newMessage);
     selectedCloudFilesPage = [];
 

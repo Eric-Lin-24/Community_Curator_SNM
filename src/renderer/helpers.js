@@ -37,13 +37,37 @@ function switchDocumentSource(source) {
 /**
  * Refresh cloud documents based on active source
  */
-function refreshCloudDocs() {
-  if (AppState.activeDocumentSource === 'googledrive') {
-    refreshGoogleDriveDocs();
-  } else {
-    refreshOneDriveDocs();
+async function refreshCloudDocs(opts = {}) {
+  const source = opts.source || AppState.activeDocumentSource || 'onedrive';
+  const folderId = opts.folderId || (AppState.documentNav?.[source]?.folderId) || 'root';
+
+  try {
+    // OneDrive (Graph)
+    if (source === 'onedrive') {
+      // IMPORTANT: update your OneDrive fetch to use folderId (root vs /items/{id}/children)
+      const docs = await MicrosoftGraphAPI.getOneDriveFiles(folderId);
+      AppState.documents = (AppState.documents || []).filter(d => (d.source || 'onedrive') !== 'onedrive')
+        .concat(docs.map(d => ({ ...d, source: 'onedrive' })));
+      AppState.lastSync.onedrive = new Date().toISOString();
+    }
+
+    // Google Drive
+    if (source === 'googledrive') {
+      // Ideally your Drive fetch supports folderId.
+      // If not, keep folderId ignored until backend supports it.
+      const docs = await GoogleDriveAPI.getGoogleDriveFiles(folderId);
+      AppState.documents = (AppState.documents || []).filter(d => d.source !== 'googledrive')
+        .concat(docs.map(d => ({ ...d, source: 'googledrive' })));
+      AppState.lastSync.googledrive = new Date().toISOString();
+    }
+
+    showNotification('Documents synced', 'success');
+  } catch (e) {
+    console.error(e);
+    showNotification('Sync failed: ' + (e?.message || e), 'error');
   }
 }
+
 
 /**
  * Refresh OneDrive documents

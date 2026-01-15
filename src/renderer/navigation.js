@@ -1,32 +1,61 @@
-// Navigation Module
-// Handles navigation between views and sidebar toggling
+// ============================================
+// NAVIGATION MODULE
+// View routing and rendering orchestration
+// ============================================
 
-/**
- * Navigate to a specific view
- * @param {string} view - The view to navigate to (dashboard, documents, scheduling, forms, settings)
- */
+const viewMeta = {
+  dashboard: {
+    title: 'Dashboard',
+    subtitle: "Welcome back! Here's your overview."
+  },
+  documents: {
+    title: 'Documents',
+    subtitle: 'Manage and sync your cloud files.'
+  },
+  scheduling: {
+    title: 'Messages',
+    subtitle: 'Schedule and manage automated updates.'
+  },
+  scheduleMessage: {
+    title: 'Compose Message',
+    subtitle: 'Draft a new update for your community.'
+  },
+  forms: {
+    title: 'Forms',
+    subtitle: 'View surveys and collect feedback.'
+  },
+  settings: {
+    title: 'Settings',
+    subtitle: 'Configure platform connections and preferences.'
+  }
+};
+
 function navigateTo(view) {
   AppState.currentView = view;
-  renderApp();
+
+  const content = document.getElementById('content');
+
+  if (content) {
+    content.style.opacity = '0';
+    content.style.transform = 'translateY(10px)';
+    content.style.transition = 'opacity 0.15s ease, transform 0.15s ease';
+
+    setTimeout(() => {
+      renderApp();
+
+      requestAnimationFrame(() => {
+        content.style.opacity = '1';
+        content.style.transform = 'translateY(0)';
+      });
+    }, 150);
+  } else {
+    renderApp();
+  }
 }
 
-/**
- * Toggle the sidebar visibility
- */
-function toggleSidebar() {
-  const sidebar = document.getElementById('sidebar');
-  sidebar.classList.toggle('hidden');
-}
-
-/**
- * Main app rendering function
- * Updates the active navigation item, page title, and renders the current view
- */
 function renderApp() {
-  const contentArea = document.getElementById('content');
+  // Update Sidebar Active State
   const navItems = document.querySelectorAll('.nav-item');
-
-  // Update active nav item
   navItems.forEach(item => {
     if (item.dataset.view === AppState.currentView) {
       item.classList.add('active');
@@ -35,48 +64,85 @@ function renderApp() {
     }
   });
 
-  // Update header with consistent titles
-  const titles = {
-    dashboard: { title: 'Dashboard', subtitle: 'Welcome back! Here\'s an overview of your community platform' },
-    documents: { title: 'Documents', subtitle: 'Manage and sync your OneDrive files' },
-    scheduling: { title: 'Message Scheduling', subtitle: 'Schedule and manage automated messages' },
-    scheduleMessage: { title: 'Schedule Message', subtitle: 'Create and schedule a new message' },
-    forms: { title: 'Microsoft Forms', subtitle: 'Create forms and view responses' },
-    settings: { title: 'Settings', subtitle: 'Configure your application preferences' }
-  };
+  // Update Header
+  const currentMeta = viewMeta[AppState.currentView] || viewMeta.dashboard;
 
-  const header = titles[AppState.currentView];
-  document.getElementById('view-title').textContent = header.title;
-  document.getElementById('view-subtitle').textContent = header.subtitle;
+  const titleEl = document.getElementById('view-title');
+  const subEl = document.getElementById('view-subtitle');
 
-  // Render content based on view
+  if (titleEl) titleEl.textContent = currentMeta.title;
+  if (subEl) subEl.textContent = currentMeta.subtitle;
+
+  // Update message badge
+  const messageBadge = document.getElementById('message-badge');
+  if (messageBadge) {
+    const pendingCount = AppState.scheduledMessages.filter(m => m.status !== 'sent').length;
+    if (pendingCount > 0) {
+      messageBadge.textContent = pendingCount;
+      messageBadge.style.display = 'block';
+    } else {
+      messageBadge.style.display = 'none';
+    }
+  }
+
+  // Update user card
+  if (typeof updateUserCard === 'function') {
+    updateUserCard();
+  }
+
+  // Render the specific view
   switch (AppState.currentView) {
     case 'dashboard':
-      renderDashboard();
+      if (typeof renderDashboard === 'function') renderDashboard();
       break;
     case 'documents':
-      renderDocuments();
+      if (typeof renderDocuments === 'function') renderDocuments();
       break;
     case 'scheduling':
-      renderScheduling();
+      if (typeof renderScheduling === 'function') renderScheduling();
       break;
     case 'scheduleMessage':
-      renderScheduleMessagePage();
+      if (typeof renderScheduleMessagePage === 'function') {
+        renderScheduleMessagePage();
+      } else {
+        AppState.currentView = 'scheduling';
+        if (typeof renderScheduling === 'function') renderScheduling();
+      }
       break;
     case 'forms':
-      renderForms();
+      if (typeof renderForms === 'function') renderForms();
       break;
     case 'settings':
-      renderSettings();
+      if (typeof renderSettings === 'function') renderSettings();
       break;
     default:
-      renderDashboard();
+      AppState.currentView = 'dashboard';
+      if (typeof renderDashboard === 'function') renderDashboard();
   }
 }
 
-// Export functions to global scope
+function refreshCurrentView() {
+  showNotification('Refreshing...', 'info');
+
+  switch (AppState.currentView) {
+    case 'documents':
+      if (typeof refreshCloudDocs === 'function') refreshCloudDocs();
+      break;
+    case 'forms':
+      if (typeof refreshForms === 'function') refreshForms();
+      break;
+    case 'scheduling':
+      AzureVMAPI.refreshSubscribedChats();
+      break;
+    default:
+      renderApp();
+      showNotification('Refreshed', 'success');
+  }
+}
+
+// Export to global scope
 if (typeof window !== 'undefined') {
   window.navigateTo = navigateTo;
-  window.toggleSidebar = toggleSidebar;
   window.renderApp = renderApp;
+  window.refreshCurrentView = refreshCurrentView;
 }

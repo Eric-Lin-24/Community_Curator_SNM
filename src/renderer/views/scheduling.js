@@ -2,130 +2,94 @@
 // SCHEDULING VIEW
 // ============================================
 
-/**
- * Render the scheduling view
- * Shows pending and sent scheduled messages
- */
 function renderScheduling() {
   const content = document.getElementById('content');
-
-  const pendingMessages = AppState.scheduledMessages.filter(m => m.status === 'pending');
-  const sentMessages = AppState.scheduledMessages.filter(m => m.status === 'sent');
+  const messages = AppState.scheduledMessages || [];
+  const subscribedChats = AppState.subscribedChats || [];
 
   content.innerHTML = `
-    <div class="space-y-6">
-      <!-- Header with Actions -->
-      <div class="flex items-center justify-between">
-        <div>
-          <h3 class="text-2xl font-bold text-gray-800">Message Scheduling</h3>
-          <p class="text-gray-600">Schedule and manage automated messages</p>
-        </div>
-        <div class="flex items-center gap-3">
-          <button
-            onclick="AzureVMAPI.refreshSubscribedChats()"
-            class="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
-            title="Refresh subscribed chats from Azure VM"
-          >
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-            <span>Refresh Chats</span>
-          </button>
-          <button
-            onclick="showModal('newMessage')"
-            class="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-            </svg>
-            <span>Schedule Message</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- Azure VM Connection Status -->
-      <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-3">
-            <div class="p-2 ${AppState.azureVmUrl ? 'bg-green-100' : 'bg-gray-100'} rounded-lg">
-              <svg class="w-5 h-5 ${AppState.azureVmUrl ? 'text-green-600' : 'text-gray-400'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2H5a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
-              </svg>
+    <div class="animate-slide-up">
+      <div class="grid grid-cols-3 gap-6">
+        
+        <div class="card" style="grid-column: span 1;">
+          <div class="flex items-center gap-3 mb-6">
+            <div class="stat-icon teal" style="width: 40px; height: 40px;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             </div>
             <div>
-              <p class="text-sm font-medium text-gray-800">Azure VM Connection</p>
-              <p class="text-xs text-gray-600">
-                ${AppState.azureVmUrl
-                  ? `Connected to: ${AppState.azureVmUrl}`
-                  : 'Not configured - Set Azure VM URL in Settings'}
-              </p>
+              <h3 class="font-semibold">Quick Schedule</h3>
+              <p class="text-xs text-muted">Send a new message</p>
             </div>
           </div>
-          <div class="text-right">
-            <p class="text-sm font-semibold text-gray-800">${AppState.subscribedChats.length}</p>
-            <p class="text-xs text-gray-600">Subscribed Chats</p>
+          
+          <div class="flex flex-col gap-4">
+            <div class="form-group">
+              <label class="form-label">Recipient</label>
+              <select id="quick-recipient">
+                <option value="">Select a chat...</option>
+                ${subscribedChats.map(chat => `<option value="${chat.id}">${chat.name || chat.id}</option>`).join('')}
+              </select>
+            </div>
+            
+            <div class="form-group">
+              <label class="form-label">Message</label>
+              <textarea id="quick-message" rows="4" placeholder="Type your message..."></textarea>
+            </div>
+            
+            <div class="form-group">
+              <label class="form-label">Schedule For</label>
+              <input type="datetime-local" id="quick-datetime">
+            </div>
+            
+            <button class="btn btn-primary w-full" onclick="quickScheduleMessage()">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+              Schedule Message
+            </button>
+            
+            <div class="divider"></div>
+            
+            <button class="btn btn-secondary w-full" onclick="navigateTo('scheduleMessage')">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              Open Full Editor
+            </button>
           </div>
         </div>
-      </div>
 
-      <!-- Pending Messages -->
-      <div class="bg-white rounded-xl shadow-sm border border-gray-200">
-        <div class="p-6 border-b border-gray-200">
-          <h4 class="font-semibold text-gray-800">Pending Messages (${pendingMessages.length})</h4>
-        </div>
-        <div class="p-6">
-          ${pendingMessages.length === 0 ? `
-            <div class="text-center py-8 text-gray-500">
-              <svg class="w-12 h-12 mx-auto mb-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 01-2 2z" />
-              </svg>
-              <p class="text-sm">No pending messages</p>
-              <button
-                onclick="showModal('newMessage')"
-                class="mt-3 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
-              >
-                Schedule Your First Message
-              </button>
+        <div class="card" style="grid-column: span 2;">
+          <div class="flex justify-between items-center mb-6">
+            <div>
+              <h3 class="font-semibold">Message Queue</h3>
+              <p class="text-sm text-muted">${messages.length} message${messages.length !== 1 ? 's' : ''} scheduled</p>
+            </div>
+            <button class="btn btn-ghost btn-sm" onclick="AzureVMAPI.refreshSubscribedChats()">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+              Refresh
+            </button>
+          </div>
+
+          ${messages.length === 0 ? `
+            <div class="empty-state" style="padding: 48px 24px;">
+              <div class="empty-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+              <h3>No messages scheduled</h3>
+              <p>Use the quick schedule form or open the full editor.</p>
             </div>
           ` : `
-            <div class="space-y-3">
-              ${pendingMessages.map(msg => `
-                <div class="flex items-start gap-4 p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-                  <div class="p-3 bg-orange-50 text-orange-600 rounded-lg">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            <div class="flex flex-col">
+              ${messages.map((msg, index) => `
+                <div class="message-item" style="animation: slideUp 0.3s ease ${index * 0.05}s both;">
+                  <div class="message-status ${msg.status === 'sent' ? 'sent' : 'pending'}"></div>
+                  <div class="message-content">
+                    <div class="flex justify-between items-start mb-1">
+                      <span class="message-recipient">${msg.recipient || 'Unknown'}</span>
+                      <span class="badge ${msg.status === 'sent' ? 'badge-success' : 'badge-warning'}">${msg.status || 'Pending'}</span>
+                    </div>
+                    <p class="message-preview">${msg.message_content || ''}</p>
+                    <span class="text-xs text-muted mt-2">${formatDateTime(msg.scheduled_time)}</span>
                   </div>
-                  <div class="flex-1 min-w-0">
-                    <div class="flex items-start justify-between mb-2">
-                      <div>
-                        <p class="font-medium text-gray-800">To: ${msg.recipient}</p>
-                        <p class="text-sm text-gray-600 capitalize">${msg.platform}</p>
-                      </div>
-                      <span class="px-2 py-1 bg-orange-100 text-orange-700 text-xs rounded">Pending</span>
-                    </div>
-                    <p class="text-sm text-gray-700 mb-3">${msg.message_content}</p>
-                    <div class="flex items-center justify-between">
-                      <div class="flex items-center gap-2 text-xs text-gray-500">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 01-2 2z" />
-                        </svg>
-                        <span>Scheduled: ${formatDateTime(msg.scheduled_time)}</span>
-                      </div>
-                      <div class="flex gap-2">
-                        <button
-                          onclick="sendMessageNow('${msg.id}')"
-                          class="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition-colors"
-                        >
-                          Send Now
-                        </button>
-                        <button
-                          onclick="deleteMessage('${msg.id}')"
-                          class="px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700 transition-colors"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </div>
+                  <div class="flex gap-2">
+                    <button class="btn-icon" onclick="deleteMessage('${msg.id}')" title="Delete" style="color: var(--error);">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                    </button>
                   </div>
                 </div>
               `).join('')}
@@ -134,76 +98,92 @@ function renderScheduling() {
         </div>
       </div>
 
-      <!-- Sent Messages -->
-      <div class="bg-white rounded-xl shadow-sm border border-gray-200">
-        <div class="p-6 border-b border-gray-200">
-          <h4 class="font-semibold text-gray-800">Sent Messages (${sentMessages.length})</h4>
+      <div class="card mt-6">
+        <div class="flex justify-between items-center mb-6">
+          <div>
+            <h3 class="font-semibold">Subscribed Chats</h3>
+            <p class="text-sm text-muted">${subscribedChats.length} active chat${subscribedChats.length !== 1 ? 's' : ''}</p>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="AzureVMAPI.refreshSubscribedChats()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            Refresh
+          </button>
         </div>
-        <div class="p-6">
-          ${sentMessages.length === 0 ? `
-            <div class="text-center py-8 text-gray-500">
-              <svg class="w-12 h-12 mx-auto mb-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-              </svg>
-              <p class="text-sm">No sent messages</p>
-            </div>
-          ` : `
-            <div class="space-y-3">
-              ${sentMessages.map(msg => `
-                <div class="flex itemsstart gap-4 p-4 border border-gray-200 rounded-lg">
-                  <div class="p-3 bg-green-50 text-green-600 rounded-lg">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-                    </svg>
-                  </div>
-                  <div class="flex-1 min-w-0">
-                    <div class="flex items-start justify-between mb-2">
-                      <div>
-                        <p class="font-medium text-gray-800">To: ${msg.recipient}</p>
-                        <p class="text-sm text-gray-600 capitalize">${msg.platform}</p>
-                      </div>
-                      <span class="px-2 py-1 bg-green-100 text-green-700 text-xs rounded">Sent</span>
-                    </div>
-                    <p class="text-sm text-gray-700 mb-3">${msg.message_content}</p>
-                    <div class="flex items-center gap-2 text-xs text-gray-500">
-                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      <span>Sent: ${formatDateTime(msg.sent_at || msg.scheduled_time)}</span>
-                    </div>
-                  </div>
+        
+        ${subscribedChats.length === 0 ? `
+          <div class="text-center py-8 text-muted"><p>No subscribed chats found.</p></div>
+        ` : `
+          <div class="grid grid-cols-3 gap-4">
+            ${subscribedChats.map((chat, index) => `
+              <div class="connection-card" style="animation: slideUp 0.3s ease ${index * 0.05}s both;">
+                <div class="connection-icon whatsapp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg></div>
+                <div class="connection-info">
+                  <div class="connection-name">${chat.name || chat.id}</div>
+                  <div class="connection-status">${chat.type || 'Group'} • ${chat.platform || 'WhatsApp'}</div>
                 </div>
-              `).join('')}
-            </div>
-          `}
-        </div>
+              </div>
+            `).join('')}
+          </div>
+        `}
       </div>
     </div>
   `;
+
+  const datetimeInput = document.getElementById('quick-datetime');
+  if (datetimeInput) {
+    const now = new Date();
+    now.setHours(now.getHours() + 1);
+    now.setMinutes(0);
+    datetimeInput.value = now.toISOString().slice(0, 16);
+  }
 }
 
-/**
- * Send a scheduled message immediately
- * @param {string} messageId - Message ID
- */
-function sendMessageNow(messageId) {
-  const messageIndex = AppState.scheduledMessages.findIndex(m => m.id === messageId);
-  if (messageIndex !== -1) {
-    AppState.scheduledMessages[messageIndex].status = 'sent';
-    AppState.scheduledMessages[messageIndex].sent_at = new Date().toISOString();
+async function quickScheduleMessage() {
+  const recipient = document.getElementById('quick-recipient').value;
+  const message = document.getElementById('quick-message').value;
+  const datetime = document.getElementById('quick-datetime').value;
+
+  if (!recipient) { showNotification('Please select a recipient', 'warning'); return; }
+  if (!message.trim()) { showNotification('Please enter a message', 'warning'); return; }
+  if (!datetime) { showNotification('Please select a date and time', 'warning'); return; }
+
+  try {
+    showNotification('Scheduling message...', 'info');
+
+    const scheduledTimestamp = new Date(datetime).toISOString();
+    await AzureVMAPI.scheduleMessage(recipient, message, scheduledTimestamp, []);
+
+    AppState.scheduledMessages.push({
+      id: generateId(),
+      recipient: AppState.subscribedChats.find(c => c.id === recipient)?.name || recipient,
+      message_content: message,
+      scheduled_time: scheduledTimestamp,
+      status: 'pending'
+    });
+
+    showNotification('Message scheduled successfully!', 'success');
+
+    document.getElementById('quick-recipient').value = '';
+    document.getElementById('quick-message').value = '';
+
     renderScheduling();
-    alert('Message sent successfully!');
+  } catch (error) {
+    console.error('Error scheduling message:', error);
+    showNotification('Failed to schedule message: ' + error.message, 'error');
   }
 }
 
-/**
- * Delete a scheduled message
- * @param {string} messageId - Message ID
- */
 function deleteMessage(messageId) {
-  if (!confirm('Are you sure you want to delete this scheduled message?')) {
-    return;
+  const index = AppState.scheduledMessages.findIndex(m => m.id === messageId);
+  if (index > -1) {
+    AppState.scheduledMessages.splice(index, 1);
+    showNotification('Message deleted', 'success');
+    renderScheduling();
   }
-  AppState.scheduledMessages = AppState.scheduledMessages.filter(m => m.id !== messageId);
-  renderScheduling();
+}
+
+if (typeof window !== 'undefined') {
+  window.renderScheduling = renderScheduling;
+  window.quickScheduleMessage = quickScheduleMessage;
+  window.deleteMessage = deleteMessage;
 }
