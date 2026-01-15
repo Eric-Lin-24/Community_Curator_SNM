@@ -36,17 +36,19 @@ const GoogleDriveAPI = {
       const savedEmail = localStorage.getItem(userGoogleEmailKey);
       const savedTokenInfo = localStorage.getItem(userGoogleTokenKey);
 
-      if (savedEmail && savedTokenInfo) {
-        AppState.googleDriveConnected = true;
-        AppState.googleDriveEmail = savedEmail;
-        console.log('✓ Restored Google Drive auth for user:', AppState.userId);
-        return true;
-      }
+      // Don't trust saved auth - always verify with fresh token from main process
+      // This ensures we have valid, up-to-date credentials
 
       // Get user info
       const userInfo = await window.electronAPI.getGoogleUserInfo();
 
       if (!userInfo) {
+        // Clear any stale saved data
+        if (savedEmail || savedTokenInfo) {
+          console.log('Clearing stale Google auth data for user:', AppState.userId);
+          localStorage.removeItem(userGoogleEmailKey);
+          localStorage.removeItem(userGoogleTokenKey);
+        }
         AppState.googleDriveConnected = false;
         AppState.googleDriveEmail = '';
         return false;
@@ -57,26 +59,13 @@ const GoogleDriveAPI = {
 
       if (!tokenInfo) {
         console.warn('User info exists but no access token - session may have expired');
+
+        // Clear saved data since it's invalid
+        localStorage.removeItem(userGoogleEmailKey);
+        localStorage.removeItem(userGoogleTokenKey);
+
         AppState.googleDriveConnected = false;
         AppState.googleDriveEmail = '';
-
-        // Try to refresh the token by calling getGoogleAccessToken again
-        try {
-          const refreshedToken = await window.electronAPI.getGoogleAccessToken();
-          if (refreshedToken) {
-            console.log('Token refreshed successfully during auth check');
-            AppState.googleDriveConnected = true;
-            AppState.googleDriveEmail = userInfo.email;
-
-            // Save to user-specific storage
-            localStorage.setItem(userGoogleEmailKey, userInfo.email);
-            localStorage.setItem(userGoogleTokenKey, JSON.stringify(tokenInfo));
-
-            return true;
-          }
-        } catch (refreshError) {
-          console.error('Token refresh failed:', refreshError);
-        }
 
         showNotification('Google Drive session expired. Please reconnect in Settings.', 'warning');
         return false;
@@ -86,7 +75,7 @@ const GoogleDriveAPI = {
       AppState.googleDriveConnected = true;
       AppState.googleDriveEmail = userInfo.email;
 
-      // Save to user-specific storage
+      // Save to user-specific storage only after verifying it works
       localStorage.setItem(userGoogleEmailKey, userInfo.email);
       localStorage.setItem(userGoogleTokenKey, JSON.stringify(tokenInfo));
 
@@ -94,6 +83,13 @@ const GoogleDriveAPI = {
       return true;
     } catch (error) {
       console.error('Google auth check error:', error);
+
+      // Clear any saved auth data on error
+      if (AppState.userId) {
+        localStorage.removeItem(`google_email_${AppState.userId}`);
+        localStorage.removeItem(`google_token_${AppState.userId}`);
+      }
+
       AppState.googleDriveConnected = false;
       AppState.googleDriveEmail = '';
       return false;

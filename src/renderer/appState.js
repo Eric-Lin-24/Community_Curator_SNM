@@ -21,6 +21,7 @@ const AppState = {
   activeDocumentSource: 'onedrive', // 'onedrive' or 'googledrive'
   subscribedChats: [], // List of subscribed chat IDs from Azure VM
   azureVmUrl: 'http://20.153.191.11:8000', // Azure VM URL (hardcoded)
+  authenticationUrl: 'http://20.153.191.11:8080', // Azure VM URL (hardcoded)
   loadingSubscribedChats: false,
   customAuthToken: null // Custom auth token
 };

@@ -266,14 +266,20 @@ function renderScheduleMessagePage() {
     </div>
   `;
 
-  // Add character counter
-  const contentTextarea = document.getElementById('msg-content-page');
-  const charCount = document.getElementById('char-count-page');
-  if (contentTextarea && charCount) {
-    contentTextarea.addEventListener('input', () => {
-      charCount.textContent = `${contentTextarea.value.length} characters`;
-    });
-  }
+  // Add character counter - use setTimeout to ensure DOM is ready
+  setTimeout(() => {
+    const contentTextarea = document.getElementById('msg-content-page');
+    const charCount = document.getElementById('char-count-page');
+    if (contentTextarea && charCount) {
+      contentTextarea.addEventListener('input', () => {
+        charCount.textContent = `${contentTextarea.value.length} characters`;
+      });
+
+      // Ensure textarea is focusable and clickable
+      contentTextarea.style.pointerEvents = 'auto';
+      contentTextarea.style.zIndex = '1';
+    }
+  }, 0);
 }
 
 // Store for cloud files selected for attachment
@@ -628,6 +634,7 @@ async function scheduleMessageFromPage(event) {
       target_user_id: targetUserId,
       status: result.status || 'pending',
       created_at: new Date().toISOString(),
+      from_sender: AppState.userId, // Track which user created this message
       server_response: result
     };
 

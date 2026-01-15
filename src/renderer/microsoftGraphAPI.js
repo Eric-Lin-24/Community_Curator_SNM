@@ -9,28 +9,63 @@ const MicrosoftGraphAPI = {
 
   async authenticateWithMicrosoft() {
     try {
-      console.log('Starting Microsoft authentication...');
+      console.log('\n╔════════════════════════════════════════════════════════════╗');
+      console.log('║   [RENDERER] MICROSOFT AUTH - User clicked login button   ║');
+      console.log('╚════════════════════════════════════════════════════════════╝');
+      console.log('⏰ Timestamp:', new Date().toISOString());
+      console.log('\n🔍 CHECKING APP STATE:');
+      console.log('   AppState.userId:', AppState.userId);
+      console.log('   AppState.username:', AppState.username);
+      console.log('   AppState object:', AppState);
+
+      // Check if user is logged into the app first
+      if (!AppState.userId) {
+        console.error('❌ Cannot connect to Microsoft: No app user logged in');
+        console.error('   → AppState.userId is:', AppState.userId);
+        console.error('   → AppState.username is:', AppState.username);
+        console.error('   → User must sign in to Community Curator first');
+        showNotification('Please sign in to your Community Curator account first before connecting to Microsoft', 'error');
+        return;
+      }
+
+      console.log('✅ App user logged in:', AppState.userId);
+      console.log('📤 Calling window.electronAPI.login()...');
+
       const result = await window.electronAPI.login();
 
       if (result.success) {
-        console.log('Authentication window opened, waiting for response...');
+        console.log('✅ Login request sent to main process');
+        console.log('⏳ Browser should open shortly for user authentication');
+        console.log('⏳ Waiting for "auth-success" event from main process...\n');
         showNotification('Authentication in progress...', 'info');
       }
     } catch (error) {
-      console.error('Login error:', error);
+      console.error('\n╔════════════════════════════════════════════════════════════╗');
+      console.error('║   [RENDERER] AUTHENTICATION ERROR                          ║');
+      console.error('╚════════════════════════════════════════════════════════════╝');
+      console.error('❌ Error:', error);
       showNotification('Login failed: ' + error.message, 'error');
     }
   },
 
   async checkAuthentication() {
     try {
+      console.log('\n╔════════════════════════════════════════════════════════════╗');
+      console.log('║   [RENDERER] CHECK AUTHENTICATION                          ║');
+      console.log('╚════════════════════════════════════════════════════════════╝');
+      console.log('⏰ Timestamp:', new Date().toISOString());
+
       // Check if user is logged in to the app first
       if (!AppState.userId) {
+        console.log('ℹ️  No app user logged in');
+        console.log('   → Skipping Microsoft authentication check\n');
         AppState.isAuthenticated = false;
         AppState.accessToken = null;
         AppState.userProfile = null;
-        return;
+        return false;
       }
+
+      console.log('✅ App user logged in:', AppState.userId);
 
       // Load user-specific Microsoft auth from localStorage
       const userMsTokenKey = `ms_token_${AppState.userId}`;
@@ -39,48 +74,135 @@ const MicrosoftGraphAPI = {
       const savedToken = localStorage.getItem(userMsTokenKey);
       const savedProfile = localStorage.getItem(userMsProfileKey);
 
+      console.log('\n🔍 Checking localStorage for saved Microsoft credentials...');
+      console.log('   Key:', userMsTokenKey);
+      console.log('   Has saved token:', !!savedToken);
+      console.log('   Has saved profile:', !!savedProfile);
+
+      // If we have saved credentials for this user, use them
       if (savedToken && savedProfile) {
         AppState.accessToken = savedToken;
         AppState.userProfile = JSON.parse(savedProfile);
         AppState.isAuthenticated = true;
-        console.log('✓ Restored Microsoft auth for user:', AppState.userId);
-        return;
+        console.log('✅ Found saved Microsoft credentials');
+        console.log('   Email:', AppState.userProfile.email);
+        console.log('   Token (first 30 chars):', savedToken.substring(0, 30) + '...');
+
+        // Verify the saved token still works by making a simple API call
+        try {
+          console.log('\n🔄 Verifying saved token with Microsoft Graph API...');
+          await this.graphFetch('/me');
+          console.log('✅ Token verified - still valid!');
+          console.log('🎉 Microsoft authentication restored successfully\n');
+          return true;
+        } catch (error) {
+          // Token expired or invalid - clear it and try to get fresh one
+          console.log('⚠️  Saved token expired or invalid');
+          console.log('   Error:', error.message);
+          console.log('   → Clearing saved credentials');
+          console.log('   → Attempting to get fresh token from main process...');
+          localStorage.removeItem(userMsTokenKey);
+          localStorage.removeItem(userMsProfileKey);
+          AppState.isAuthenticated = false;
+          AppState.accessToken = null;
+          AppState.userProfile = null;
+          // Continue to try getting fresh token below
+        }
+      } else {
+        console.log('ℹ️  No saved credentials found for this user');
       }
 
+      // No saved credentials or they expired - check if main process has a fresh token (just logged in)
+      console.log('\n📞 Requesting fresh token from main process...');
+      console.log('   Calling window.electronAPI.getAccessToken()...');
       const token = await window.electronAPI.getAccessToken();
 
-      if (token) {
-        AppState.accessToken = token;
-        AppState.isAuthenticated = true;
-
-        // Fetch user profile
-        await this.getUserProfile();
-
-        // Save to user-specific storage
-        localStorage.setItem(userMsTokenKey, token);
-        localStorage.setItem(userMsProfileKey, JSON.stringify(AppState.userProfile));
-
-        console.log('✓ Microsoft authenticated for user:', AppState.userId);
-        showNotification('Successfully connected to Microsoft!', 'success');
-        renderApp();
-      } else {
+      if (!token) {
+        console.log('\n❌ No token available from main process');
+        console.log('   → User needs to click "Connect to Microsoft" to sign in\n');
         AppState.isAuthenticated = false;
         AppState.accessToken = null;
         AppState.userProfile = null;
+        return false;
       }
+
+      console.log('✅ Received fresh token from main process!');
+      console.log('   Token (first 30 chars):', token.substring(0, 30) + '...');
+
+      // Fresh token from main process - save it for this user
+      AppState.accessToken = token;
+      AppState.isAuthenticated = true;
+
+      // Fetch user profile to verify token works
+      try {
+        console.log('\n📥 Fetching user profile from Microsoft Graph...');
+        await this.getUserProfile();
+        console.log('✅ User profile fetched successfully');
+        console.log('   Email:', AppState.userProfile.email);
+        console.log('   Display Name:', AppState.userProfile.displayName);
+      } catch (profileError) {
+        console.error('\n❌ Failed to fetch user profile');
+        console.error('   Error:', profileError.message);
+        console.error('   → Token may be invalid');
+        AppState.isAuthenticated = false;
+        AppState.accessToken = null;
+        AppState.userProfile = null;
+        showNotification('Microsoft authentication failed. Please try again.', 'error');
+        return false;
+      }
+
+      // Save to user-specific storage
+      console.log('\n💾 Saving credentials to localStorage...');
+      console.log('   Token key:', userMsTokenKey);
+      console.log('   Profile key:', userMsProfileKey);
+      localStorage.setItem(userMsTokenKey, token);
+      localStorage.setItem(userMsProfileKey, JSON.stringify(AppState.userProfile));
+      console.log('   ✓ Credentials saved');
+
+      console.log('\n🎉 MICROSOFT AUTHENTICATION SUCCESSFUL!');
+      console.log('   User:', AppState.userId);
+      console.log('   Email:', AppState.userProfile.email);
+      console.log('   Profile saved to localStorage for future sessions\n');
+
+      showNotification('Successfully connected to Microsoft!', 'success');
+
+      // If user is on settings page, refresh it to show updated connection status
+      if (AppState.currentView === 'settings') {
+        renderSettings();
+      }
+
+      return true;
     } catch (error) {
-      console.error('Auth check error:', error);
+      console.error('\n╔════════════════════════════════════════════════════════════╗');
+      console.error('║   [RENDERER] AUTH CHECK ERROR                              ║');
+      console.error('╚════════════════════════════════════════════════════════════╝');
+      console.error('❌ Error:', error);
+      AppState.isAuthenticated = false;
+      AppState.accessToken = null;
+      AppState.userProfile = null;
+      return false;
     }
   },
 
   async logout() {
     try {
+      console.log('\n╔════════════════════════════════════════════════════════════╗');
+      console.log('║   [RENDERER] MICROSOFT LOGOUT                              ║');
+      console.log('╚════════════════════════════════════════════════════════════╝');
+      console.log('🚪 User requested logout');
+      console.log('📤 Calling window.electronAPI.logout()...');
+
       await window.electronAPI.logout();
 
       // Clear user-specific Microsoft auth
       if (AppState.userId) {
-        localStorage.removeItem(`ms_token_${AppState.userId}`);
-        localStorage.removeItem(`ms_profile_${AppState.userId}`);
+        const userMsTokenKey = `ms_token_${AppState.userId}`;
+        const userMsProfileKey = `ms_profile_${AppState.userId}`;
+        console.log('🧹 Clearing localStorage...');
+        console.log('   Removing:', userMsTokenKey);
+        console.log('   Removing:', userMsProfileKey);
+        localStorage.removeItem(userMsTokenKey);
+        localStorage.removeItem(userMsProfileKey);
       }
 
       AppState.isAuthenticated = false;
@@ -89,17 +211,20 @@ const MicrosoftGraphAPI = {
       AppState.documents = [];
       AppState.microsoftForms = [];
 
+      console.log('✅ Logout successful');
+      console.log('   → All credentials cleared\n');
       showNotification('Disconnected from Microsoft', 'success');
       renderApp();
     } catch (error) {
-      console.error('Logout error:', error);
+      console.error('\n❌ Logout error:', error);
       showNotification('Logout failed', 'error');
     }
   },
 
   async graphFetch(path, options = {}) {
-    // Ensure we have a valid access token from main process
-    const token = await window.electronAPI.getAccessToken();
+    // Use the token from AppState (user-specific), not from main process
+    const token = AppState.accessToken;
+
     if (!token) {
       throw new Error('No access token available — please sign in');
     }
@@ -121,8 +246,17 @@ const MicrosoftGraphAPI = {
       let parsed = bodyText;
       try { parsed = JSON.parse(bodyText); } catch (_) { /* leave as text */ }
 
-      // If 401, surface auth error so UI can prompt re-login
+      // If 401, clear the saved token and surface auth error
       if (res.status === 401) {
+        // Token expired - clear saved credentials
+        if (AppState.userId) {
+          localStorage.removeItem(`ms_token_${AppState.userId}`);
+          localStorage.removeItem(`ms_profile_${AppState.userId}`);
+        }
+        AppState.isAuthenticated = false;
+        AppState.accessToken = null;
+        AppState.userProfile = null;
+
         const err = new Error('Unauthorized: Your session has expired. Please sign in again.');
         err.status = res.status;
         err.body = parsed;

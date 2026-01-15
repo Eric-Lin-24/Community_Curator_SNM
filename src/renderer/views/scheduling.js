@@ -9,8 +9,13 @@
 function renderScheduling() {
   const content = document.getElementById('content');
 
-  const pendingMessages = AppState.scheduledMessages.filter(m => m.status === 'pending');
-  const sentMessages = AppState.scheduledMessages.filter(m => m.status === 'sent');
+  // Filter messages to only show those created by the current user
+  const userMessages = AppState.scheduledMessages.filter(m =>
+    !m.from_sender || m.from_sender === AppState.userId
+  );
+
+  const pendingMessages = userMessages.filter(m => m.status === 'pending');
+  const sentMessages = userMessages.filter(m => m.status === 'sent');
 
   content.innerHTML = `
     <div class="space-y-6">

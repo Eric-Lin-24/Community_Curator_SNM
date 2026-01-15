@@ -780,6 +780,7 @@ async function scheduleMessage(event) {
       target_user_id: targetUserId,
       status: result.status || 'pending',
       created_at: new Date().toISOString(),
+      from_sender: AppState.userId, // Track which user created this message
       server_response: result
     };
 
