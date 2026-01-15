@@ -24,6 +24,12 @@ const GoogleDriveAPI = {
       const userInfo = await window.electronAPI.getGoogleUserInfo();
 
       if (!userInfo) {
+        // Clear any stale saved data
+        if (savedEmail || savedTokenInfo) {
+          console.log('Clearing stale Google auth data for user:', AppState.userId);
+          localStorage.removeItem(userGoogleEmailKey);
+          localStorage.removeItem(userGoogleTokenKey);
+        }
         AppState.googleDriveConnected = false;
         AppState.googleDriveEmail = '';
         return false;
@@ -34,6 +40,11 @@ const GoogleDriveAPI = {
 
       if (!tokenInfo) {
         console.warn('User info exists but no access token - session may have expired');
+
+        // Clear saved data since it's invalid
+        localStorage.removeItem(userGoogleEmailKey);
+        localStorage.removeItem(userGoogleTokenKey);
+
         AppState.googleDriveConnected = false;
         AppState.googleDriveEmail = '';
 
@@ -56,11 +67,22 @@ const GoogleDriveAPI = {
 
       AppState.googleDriveConnected = true;
       AppState.googleDriveEmail = userInfo.email;
-      console.log('Google Drive authenticated:', userInfo.email);
-      return true;
 
+      // Save to user-specific storage only after verifying it works
+      localStorage.setItem(userGoogleEmailKey, userInfo.email);
+      localStorage.setItem(userGoogleTokenKey, JSON.stringify(tokenInfo));
+
+      console.log('✓ Google Drive authenticated for user:', AppState.userId);
+      return true;
     } catch (error) {
       console.error('Google auth check error:', error);
+
+      // Clear any saved auth data on error
+      if (AppState.userId) {
+        localStorage.removeItem(`google_email_${AppState.userId}`);
+        localStorage.removeItem(`google_token_${AppState.userId}`);
+      }
+
       AppState.googleDriveConnected = false;
       AppState.googleDriveEmail = '';
       return false;
@@ -70,6 +92,13 @@ const GoogleDriveAPI = {
   async logout() {
     try {
       await window.electronAPI.googleLogout();
+
+      // Clear user-specific Google auth
+      if (AppState.userId) {
+        localStorage.removeItem(`google_email_${AppState.userId}`);
+        localStorage.removeItem(`google_token_${AppState.userId}`);
+      }
+
       AppState.googleDriveConnected = false;
       AppState.googleDriveEmail = '';
 
