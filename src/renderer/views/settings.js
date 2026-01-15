@@ -7,6 +7,28 @@ function renderSettings() {
 
   content.innerHTML = `
     <div class="animate-slide-up">
+      <!-- User Account Section -->
+      ${AppState.username ? `
+      <div class="mb-8">
+        <h3 class="text-lg font-semibold mb-4">Your Account</h3>
+        <div class="connection-card">
+          <div class="connection-icon" style="background: var(--accent-primary-soft); color: var(--accent-primary);">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+              <circle cx="12" cy="7" r="4"/>
+            </svg>
+          </div>
+          <div class="connection-info flex-1">
+            <div class="connection-name">${AppState.username}</div>
+            <div class="connection-status">
+              <span class="badge badge-success">Signed In</span>
+            </div>
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="handleLogout()">Logout</button>
+        </div>
+      </div>
+      ` : ''}
+
       <div class="mb-8">
         <h3 class="text-lg font-semibold mb-4">Connected Accounts</h3>
         <div class="grid grid-cols-2 gap-4">
@@ -125,7 +147,15 @@ function updateUserCard() {
   const name = document.getElementById('user-name');
   const status = document.getElementById('user-status');
 
-  if (AppState.isAuthenticated && AppState.userProfile) {
+  // Check if user is logged in with custom auth
+  if (AppState.username && AppState.userId) {
+    const initials = AppState.username.substring(0, 2).toUpperCase();
+    if (avatar) avatar.textContent = initials;
+    if (name) name.textContent = AppState.username;
+    if (status) status.innerHTML = '<span style="color: var(--success);">● Signed In</span>';
+  }
+  // Check if connected to Microsoft
+  else if (AppState.isAuthenticated && AppState.userProfile) {
     const initials = AppState.userProfile.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
     if (avatar) avatar.textContent = initials;
     if (name) name.textContent = AppState.userProfile.name;
