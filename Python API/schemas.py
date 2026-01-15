@@ -33,13 +33,18 @@ class SubscribeUserResponse(BaseModel):
         from_attributes = True
 
 class User(BaseModel):
-    id: int
     username: str
+    uuid: str
+
 
     class Config:
         from_attributes = True
 
 class UserCreate(BaseModel):
+    username: str
+    password: str
+
+class UserSignIn(BaseModel):
     username: str
     password: str
 
