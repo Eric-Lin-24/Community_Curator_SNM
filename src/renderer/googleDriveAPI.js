@@ -2,7 +2,6 @@
 // GOOGLE DRIVE API
 // ============================================
 // This module provides Google Drive API integration for file management.
-// It requires AppState and utility functions (showNotification, renderApp) to be defined globally.
 
 const GoogleDriveAPI = {
   async authenticateWithGoogle() {
@@ -22,24 +21,6 @@ const GoogleDriveAPI = {
 
   async checkAuthentication() {
     try {
-      // Check if user is logged in to the app first
-      if (!AppState.userId) {
-        AppState.googleDriveConnected = false;
-        AppState.googleDriveEmail = '';
-        return false;
-      }
-
-      // Load user-specific Google auth from localStorage
-      const userGoogleEmailKey = `google_email_${AppState.userId}`;
-      const userGoogleTokenKey = `google_token_${AppState.userId}`;
-
-      const savedEmail = localStorage.getItem(userGoogleEmailKey);
-      const savedTokenInfo = localStorage.getItem(userGoogleTokenKey);
-
-      // Don't trust saved auth - always verify with fresh token from main process
-      // This ensures we have valid, up-to-date credentials
-
-      // Get user info
       const userInfo = await window.electronAPI.getGoogleUserInfo();
 
       if (!userInfo) {
@@ -54,7 +35,7 @@ const GoogleDriveAPI = {
         return false;
       }
 
-      // CRITICAL: Also verify we have a valid access token
+      // Verify we have a valid access token
       const tokenInfo = await window.electronAPI.getGoogleAccessToken();
 
       if (!tokenInfo) {
@@ -67,11 +48,23 @@ const GoogleDriveAPI = {
         AppState.googleDriveConnected = false;
         AppState.googleDriveEmail = '';
 
+        // Try to refresh the token
+        try {
+          const refreshedToken = await window.electronAPI.getGoogleAccessToken();
+          if (refreshedToken) {
+            console.log('Token refreshed successfully');
+            AppState.googleDriveConnected = true;
+            AppState.googleDriveEmail = userInfo.email;
+            return true;
+          }
+        } catch (refreshError) {
+          console.error('Token refresh failed:', refreshError);
+        }
+
         showNotification('Google Drive session expired. Please reconnect in Settings.', 'warning');
         return false;
       }
 
-      // Both user info AND valid token exist
       AppState.googleDriveConnected = true;
       AppState.googleDriveEmail = userInfo.email;
 
@@ -109,7 +102,7 @@ const GoogleDriveAPI = {
       AppState.googleDriveConnected = false;
       AppState.googleDriveEmail = '';
 
-      // If active source is Google Drive, switch to OneDrive or clear documents
+      // Switch to OneDrive if currently on Google Drive
       if (AppState.activeDocumentSource === 'googledrive') {
         AppState.activeDocumentSource = 'onedrive';
         AppState.documents = AppState.documents.filter(d => d.source !== 'googledrive');
@@ -134,7 +127,7 @@ const GoogleDriveAPI = {
 
       const files = await window.electronAPI.getGoogleDriveFiles();
 
-      // Transform Google Drive files to match our app format
+      // Transform to app format
       return files.map(file => ({
         id: file.id,
         title: file.name,
@@ -154,3 +147,8 @@ const GoogleDriveAPI = {
     }
   }
 };
+
+// Export to global scope
+if (typeof window !== 'undefined') {
+  window.GoogleDriveAPI = GoogleDriveAPI;
+}

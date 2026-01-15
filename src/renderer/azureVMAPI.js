@@ -1,10 +1,15 @@
 // ============================================
-// AZURE VM API - Chat Subscriptions
+// AZURE VM API - Chat Subscriptions + Messaging
 // ============================================
-// This module provides Azure VM API integration for WhatsApp chat subscriptions and message scheduling.
-// It requires AppState and utility functions (showNotification, renderScheduling) to be defined globally.
 
 const AzureVMAPI = {
+  _pollingInterval: null,
+
+  _baseUrl() {
+    if (!AppState.azureVmUrl) return '';
+    return String(AppState.azureVmUrl).replace(/\/$/, '');
+  },
+
   async fetchSubscribedChats() {
     if (!AppState.azureVmUrl) {
       throw new Error('Azure VM URL not configured. Please set it in Settings.');
@@ -13,13 +18,14 @@ const AzureVMAPI = {
     AppState.loadingSubscribedChats = true;
 
     try {
-      const response = await fetch(`${AppState.azureVmUrl}/subscribed-users`, {
+      const base = this._baseUrl();
+
+      const response = await fetch(`${base}/subscribed-users`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json'
         },
-        // Add timeout
         signal: AbortSignal.timeout(10000) // 10 second timeout
       });
 
@@ -28,9 +34,9 @@ const AzureVMAPI = {
       }
 
       const data = await response.json();
-      console.log('Raw API response:', data); // Debug log
+      console.log('Raw API response:', data);
 
-      // Handle array response (your API returns array)
+      // Handle array response
       let rawChats = [];
       if (Array.isArray(data)) {
         rawChats = data;
@@ -44,18 +50,27 @@ const AzureVMAPI = {
       }
 
       // Map your schema (user_id, chat_id, chat_name, created_at) to internal format
-      const formattedChats = rawChats.map(chat => ({
-        id: chat.chat_id || chat.id,           // Use chat_id as the primary ID
-        name: chat.chat_name || chat.name || chat.chat_id || 'Unknown Chat',  // Use chat_name
-        platform: chat.platform || 'whatsapp',  // Default to whatsapp if not specified
-        type: chat.type || 'group',             // Default to group if not specified
-        user_id: chat.user_id,                  // Keep user_id for reference
-        from_sender: chat.from_sender || chat.user_id, // Track who subscribed to this chat
-        created_at: chat.created_at             // Keep created_at for reference
-      }));
+      const formattedChats = rawChats.map(chat => {
+        console.log('Raw chat from server:', chat); // Debug: see what backend actually returns
+        return {
+          id: chat.chat_id || chat.id,           // Use chat_id for display/selection
+          chat_id: chat.chat_id,                 // Keep original chat_id
+          name: chat.chat_name || chat.name || chat.chat_id || 'Unknown Chat',  // Use chat_name
+          platform: chat.platform || 'whatsapp',  // Default to whatsapp if not specified
+          type: chat.type || 'group',             // Default to group if not specified
+          user_id: chat.user_id,                  // user_id for targeting messages - THIS IS THE IMPORTANT ONE
+          from_sender: chat.from_sender || chat.user_id, // Track who subscribed to this chat
+          created_at: chat.created_at             // Keep created_at for reference
+        };
+      });
 
-      console.log('Formatted chats:', formattedChats); // Debug log
+      console.log('Formatted chats with user_id:', formattedChats); // Debug: verify user_id is present
       AppState.subscribedChats = formattedChats;
+
+      if (AppState.lastSync) {
+        AppState.lastSync.subscribedChats = new Date().toISOString();
+      }
+
       return formattedChats;
     } catch (error) {
       console.error('Error fetching subscribed chats:', error);
@@ -71,7 +86,6 @@ const AzureVMAPI = {
       const chats = await this.fetchSubscribedChats();
       showNotification(`Loaded ${chats.length} subscribed chat(s)`, 'success');
 
-      // If we're on the scheduling page, re-render to show updated list
       if (AppState.currentView === 'scheduling') {
         renderScheduling();
       }
@@ -91,18 +105,15 @@ const AzureVMAPI = {
 
     console.log('=== PREPARING TO SEND TO AZURE VM ===');
 
-    // Normalize targetUserId: accept string, array, or single value
     let targetUserIdStr = '';
     if (Array.isArray(targetUserId)) {
       targetUserIdStr = targetUserId.join(',');
     } else if (typeof targetUserId === 'string') {
       targetUserIdStr = targetUserId;
     } else if (targetUserId != null) {
-      // e.g. number or other primitive
       targetUserIdStr = String(targetUserId);
     }
 
-    // Normalize scheduledTimestamp: accept Date object or ISO string
     let scheduledTsStr = '';
     if (scheduledTimestamp instanceof Date) {
       scheduledTsStr = scheduledTimestamp.toISOString();
@@ -118,48 +129,34 @@ const AzureVMAPI = {
     console.log('Scheduled timestamp:', scheduledTsStr);
     console.log('Files received in scheduleMessage:', files ? files.length || 0 : 0);
 
-    // Prepare form data
     const formData = new FormData();
     formData.append('target_user_id', targetUserIdStr);
     formData.append('message', message);
-    formData.append('scheduled_timestamp', scheduledTsStr); // ISO 8601 format expected by FastAPI
-    formData.append('from_sender', AppState.userId); // Add from_sender field with sender's UUID
-    formData.append('username', AppState.username); // Add username for reference
+    formData.append('scheduled_timestamp', scheduledTsStr);
+    formData.append('from_sender', AppState.userId);
+    formData.append('username', AppState.username || '');
 
-    // Add files if any
     if (files && files.length > 0) {
       console.log('Adding files to FormData:');
       Array.from(files).forEach((file, index) => {
         try {
           console.log(`  [${index}] ${file.name} - ${file.size} bytes - ${file.type}`);
         } catch (e) {
-          // some environments (non-browser) may not have file metadata
           console.log(`  [${index}] file added (no metadata available)`);
         }
-        // Append using the same field name 'files' to match FastAPI's List[UploadFile]
         formData.append('files', file);
       });
     } else {
       console.log('No files to add to FormData');
     }
 
-    // Use the FastAPI route: /schedule-message
-    const endpoint = `${AppState.azureVmUrl.replace(/\/$/, '')}/schedule-message`;
+    const endpoint = `${this._baseUrl()}/schedule-message`;
 
     console.log('Sending POST to:', endpoint);
-    console.log('Payload summary:', {
-      user_id: AppState.userId,
-      target_user_id: targetUserIdStr,
-      message: message,
-      scheduled_timestamp: scheduledTsStr,
-      files_count: files ? files.length || 0 : 0
-    });
 
-    // Send POST request
     const response = await fetch(endpoint, {
       method: 'POST',
       body: formData
-      // Don't set Content-Type - browser handles it for FormData
     });
 
     if (!response.ok) {
@@ -168,13 +165,10 @@ const AzureVMAPI = {
         const errorData = await response.json();
         errorMessage = errorData.detail || errorData.error || errorData.message || errorMessage;
       } catch (e) {
-        // If response is not JSON, try text
         try {
           const errorText = await response.text();
           if (errorText) errorMessage = errorText;
-        } catch (e2) {
-          // Keep default error message
-        }
+        } catch (e2) {}
       }
       throw new Error(errorMessage);
     }
@@ -182,19 +176,6 @@ const AzureVMAPI = {
     const result = await response.json();
     console.log('=== MESSAGE SCHEDULED SUCCESSFULLY ===');
     console.log('Response from server:', result);
-    console.log('✓ Message linked to user:', AppState.userProfile?.email);
-    const uploadedCount = files ? files.length || 0 : 0;
-    console.log(`Message scheduled with ${uploadedCount} file(s) uploaded`);
-    if (uploadedCount > 0) {
-      console.log('Files uploaded to server:');
-      Array.from(files).forEach((file, index) => {
-        try {
-          console.log(`  [${index + 1}] ${file.name} - ${file.size} bytes`);
-        } catch (e) {
-          console.log(`  [${index + 1}] file uploaded (no metadata)`);
-        }
-      });
-    }
     return result;
   },
 
@@ -203,13 +184,14 @@ const AzureVMAPI = {
       throw new Error('Azure VM URL not configured. Please set it in Settings.');
     }
 
-    const endpoint = `${AppState.azureVmUrl.replace(/\/$/, '')}/subscribe-user`;
+    const endpoint = `${this._baseUrl()}/subscribe-user`;
     try {
       const body = {
         chat_id: chatId,
         chat_name: chatName,
-        from_sender: AppState.userId // Add from_sender to track who subscribed to this chat
+        from_sender: AppState.userId
       };
+
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: {
@@ -248,14 +230,12 @@ const AzureVMAPI = {
       throw new Error('User not authenticated. Please sign in.');
     }
 
-    // Add from_sender as query parameter to filter messages by current user
-    const endpoint = `${AppState.azureVmUrl.replace(/\/$/, '')}/pending-messages?from_sender=${AppState.userId}`;
+    const endpoint = `${this._baseUrl()}/pending-messages?from_sender=${encodeURIComponent(AppState.userId)}`;
+
     try {
       const res = await fetch(endpoint, {
         method: 'GET',
-        headers: {
-          'Accept': 'application/json'
-        }
+        headers: { 'Accept': 'application/json' }
       });
 
       if (!res.ok) {
@@ -278,11 +258,6 @@ const AzureVMAPI = {
     }
   },
 
-  /**
-   * Sync pending messages from server and update local state
-   * Updates status for messages that have been sent
-   * Adds new messages from server (already filtered by from_sender)
-   */
   async syncMessagesFromServer() {
     try {
       if (!AppState.userId) {
@@ -302,33 +277,47 @@ const AzureVMAPI = {
       let updatedCount = 0;
       let addedCount = 0;
 
-      // Process server messages
+      AppState.scheduledMessages = AppState.scheduledMessages || [];
+
       serverMessages.forEach(serverMsg => {
         const localMsg = AppState.scheduledMessages.find(m => m.id === serverMsg.id);
 
         if (localMsg) {
-          // Update existing message
           if (!localMsg.from_sender || localMsg.from_sender === AppState.userId) {
-            // Check if status changed from pending to sent
             if (localMsg.status !== 'sent' && serverMsg.is_sent === true) {
               console.log(`✓ Message ${serverMsg.id} marked as SENT on server`);
               localMsg.status = 'sent';
               localMsg.sent_at = serverMsg.sent_at || new Date().toISOString();
               updatedCount++;
             } else if (serverMsg.is_sent === false && localMsg.status !== 'pending') {
-              // Update back to pending if server says not sent
               localMsg.status = 'pending';
               updatedCount++;
             }
           }
         } else {
-          // Add new message from server (already filtered by from_sender on backend)
           console.log(`➕ Adding new message from server: ${serverMsg.id}`);
+
+          // 🔍 Look up human-readable name from subscribed chats using target_user_id
+          let displayName = null;
+          const targetId = Array.isArray(serverMsg.target_user_id)
+            ? serverMsg.target_user_id[0]
+            : serverMsg.target_user_id;
+
+          if (targetId && AppState.subscribedChats) {
+            const matchingChat = AppState.subscribedChats.find(chat => chat.user_id === targetId);
+            if (matchingChat) {
+              displayName = matchingChat.name || matchingChat.chat_name;
+              console.log(`✅ Found name for user_id ${targetId}: "${displayName}"`);
+            } else {
+              console.log(`⚠️ No subscribed chat found for user_id: ${targetId}`);
+            }
+          }
+
           AppState.scheduledMessages.push({
             id: serverMsg.id,
-            recipient: Array.isArray(serverMsg.target_user_id)
+            recipient: displayName || (Array.isArray(serverMsg.target_user_id)
               ? serverMsg.target_user_id.join(', ')
-              : serverMsg.target_user_id,
+              : serverMsg.target_user_id),
             message_content: serverMsg.message,
             content: serverMsg.message,
             scheduled_time: serverMsg.scheduled_timestamp,
@@ -337,9 +326,9 @@ const AzureVMAPI = {
             status: serverMsg.is_sent ? 'sent' : 'pending',
             created_at: serverMsg.created_at || new Date().toISOString(),
             sent_at: serverMsg.sent_at,
-            from_sender: AppState.userId, // Mark as belonging to current user
+            from_sender: AppState.userId,
             file_paths: serverMsg.file_paths || [],
-            platform: 'whatsapp' // default
+            platform: 'whatsapp'
           });
           addedCount++;
         }
@@ -348,12 +337,10 @@ const AzureVMAPI = {
       if (updatedCount > 0 || addedCount > 0) {
         console.log(`✓ Sync complete: ${updatedCount} updated, ${addedCount} added`);
 
-        // Re-render scheduling view if we're on that page
         if (AppState.currentView === 'scheduling' && typeof renderScheduling === 'function') {
           renderScheduling();
         }
 
-        // Show notification for updates
         if (typeof showNotification === 'function') {
           const totalChanges = updatedCount + addedCount;
           showNotification(`${totalChanges} message(s) synced from server`, 'success');
@@ -365,24 +352,16 @@ const AzureVMAPI = {
       return serverMessages;
     } catch (error) {
       console.error('Error syncing messages from server:', error);
-      // Don't throw - we don't want polling to break the app
     }
   },
 
-  /**
-   * Start polling for message updates
-   * @param {number} intervalMs - Polling interval in milliseconds (default: 30 seconds)
-   */
   startMessagePolling(intervalMs = 30000) {
-    // Clear any existing polling
     this.stopMessagePolling();
 
     console.log(`🔄 Starting message polling (every ${intervalMs / 1000}s)`);
 
-    // Do initial sync
     this.syncMessagesFromServer();
 
-    // Start interval
     this._pollingInterval = setInterval(() => {
       if (AppState.azureVmUrl) {
         this.syncMessagesFromServer();
@@ -390,9 +369,6 @@ const AzureVMAPI = {
     }, intervalMs);
   },
 
-  /**
-   * Stop polling for message updates
-   */
   stopMessagePolling() {
     console.log('⏹️ Stopping message polling');
     clearInterval(this._pollingInterval);

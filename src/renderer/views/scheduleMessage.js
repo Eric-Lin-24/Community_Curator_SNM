@@ -1,672 +1,523 @@
 // ============================================
-// SCHEDULE MESSAGE VIEW (Dedicated Page)
+// SCHEDULE MESSAGE PAGE
+// Full message composer with file attachments
 // ============================================
 
-/**
- * Render the dedicated schedule message page
- * Provides an expanded, spacious interface for scheduling messages
- */
+// Store selected files (local + cloud)
+let selectedLocalFiles = [];
+let selectedCloudFilesPage = [];
+
 function renderScheduleMessagePage() {
   const content = document.getElementById('content');
-
-  // Generate options for subscribed chats
-  const subscribedChatsOptions = AppState.subscribedChats.map((chat, index) => {
-    const chatId = chat.id || chat.chat_id || `chat_${index}`;
-    const chatName = chat.name || chat.chat_name || chatId;
-    const platform = chat.platform || 'whatsapp';
-
-    return `<option value="${chatId}" data-platform="${platform}">${chatName} (${platform})</option>`;
-  }).join('');
+  const subscribedChats = AppState.subscribedChats || [];
+  selectedLocalFiles = [];
+  selectedCloudFilesPage = [];
 
   content.innerHTML = `
-    <div class="max-w-5xl mx-auto space-y-6">
-      <!-- Header -->
-      <div class="flex items-center gap-4 mb-6">
-        <button
-          onclick="navigateTo('scheduling')"
-          class="p-2 hover:bg-gray-200 rounded-lg transition-colors"
-          title="Back to Scheduling"
-        >
-          <svg class="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
-        <div>
-          <h2 class="text-3xl font-bold text-gray-800">Schedule New Message</h2>
-          <p class="text-gray-600 mt-1">Create and schedule a message to your community</p>
-        </div>
-      </div>
+    <div class="animate-slide-up">
+      <!-- Back Button -->
+      <button class="btn btn-ghost mb-6" onclick="navigateTo('scheduling')">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="19" y1="12" x2="5" y2="12"/>
+          <polyline points="12 19 5 12 12 5"/>
+        </svg>
+        Back to Messages
+      </button>
 
-      <!-- Main Form -->
-      <form onsubmit="scheduleMessageFromPage(event)" class="space-y-6">
-        <!-- Platform & Recipient Section -->
-        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
-          <h3 class="text-lg font-semibold text-gray-800 mb-6 flex items-center gap-2">
-            <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2v4l-4-4H9a1.994 1.994 0 01-1.414-.586m0 0L11 14h4a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2v4l.586-.586z" />
-            </svg>
-            Recipient & Platform
-          </h3>
+      <div class="grid grid-cols-3 gap-6">
+        <!-- Main Form -->
+        <div class="card" style="grid-column: span 2;">
+          <h3 class="text-lg font-semibold mb-6">Compose Message</h3>
 
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <!-- Platform Selection -->
-            <div>
-              <label class="block text-sm font-semibold text-gray-700 mb-3">Messaging Platform</label>
-              <select
-                id="msg-platform-page"
-                required
-                onchange="toggleRecipientInputPage()"
-                class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
-              >
-                <option value="whatsapp" selected>WhatsApp</option>
-                <option value="sms">SMS</option>
-                <option value="telegram">Telegram</option>
-                <option value="email">Email</option>
+          <div class="flex flex-col gap-6">
+            <!-- Recipient Selection -->
+            <div class="form-group">
+              <label class="form-label">Recipient</label>
+              <select id="message-recipient" class="form-input">
+                <option value="">Select a chat or group...</option>
+                ${subscribedChats.map(chat => {
+                  const chatId = chat.id || chat.chat_id;
+                  const chatName = chat.name || chat.chat_name || chatId;
+                  return `<option value="${chatId}" data-user-id="${chat.user_id || ''}">${chatName} (${chat.type || chat.platform || 'Group'})</option>`;
+                }).join('')}
               </select>
+              ${subscribedChats.length === 0 ? `
+                <p class="text-xs text-muted mt-2">
+                  No subscribed chats found.
+                  <button class="text-accent" style="background: none; border: none; cursor: pointer; text-decoration: underline;" onclick="AzureVMAPI.refreshSubscribedChats()">Refresh chats</button>
+                </p>
+              ` : ''}
             </div>
 
-            <!-- Subscribed Chats -->
-            <div>
-              <div class="flex items-center justify-between mb-3">
-                <label class="block text-sm font-semibold text-gray-700">Subscribed Chats</label>
-                <button
-                  type="button"
-                  onclick="refreshSubscribedChatsInPage()"
-                  class="text-xs px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors flex items-center gap-1"
-                  title="Refresh subscribed chats"
-                >
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  Refresh
+            <!-- Message Content -->
+            <div class="form-group">
+              <label class="form-label">Message</label>
+              <textarea
+                id="message-content"
+                class="form-input"
+                rows="8"
+                placeholder="Type your message here..."
+                style="resize: vertical; min-height: 150px;"
+                oninput="updateCharCount()"
+              ></textarea>
+              <div class="flex justify-between mt-2">
+                <span class="text-xs text-muted">Supports basic text formatting</span>
+                <span class="text-xs text-muted"><span id="char-count">0</span> characters</span>
+              </div>
+            </div>
+
+            <!-- File Attachments -->
+            <div class="form-group">
+              <label class="form-label">Attachments</label>
+
+              <!-- File source tabs -->
+              <div class="flex gap-2 mb-4">
+                <button type="button" onclick="switchFileSourcePage('local')" id="tab-local-page" class="btn btn-primary btn-sm flex-1">
+                  📁 Local Files
+                </button>
+                <button type="button" onclick="switchFileSourcePage('cloud')" id="tab-cloud-page" class="btn btn-secondary btn-sm flex-1">
+                  ☁️ Cloud Storage
                 </button>
               </div>
-              ${AppState.subscribedChats.length > 0 ? `
-                <select
-                  id="msg-subscribed-chat-page"
-                  class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
-                  onchange="onSubscribedChatSelectPage()"
-                >
-                  <option value="">-- Select from subscribed chats --</option>
-                  ${subscribedChatsOptions}
-                </select>
-              ` : `
-                <div class="text-sm text-gray-500 p-4 bg-gray-50 rounded-lg border border-gray-200 flex items-center gap-2">
-                  <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  ${AppState.azureVmUrl ? 'No subscribed chats found. Click refresh to load.' : 'Configure Azure VM URL in Settings to load subscribed chats.'}
-                </div>
-              `}
-            </div>
-          </div>
 
-          <!-- Recipient Input -->
-          <div class="mt-6">
-            <label class="block text-sm font-semibold text-gray-700 mb-3">Recipient</label>
-            <input
-              type="text"
-              id="msg-recipient-page"
-              required
-              class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
-              placeholder="Enter recipient name or number"
-            />
-            <p class="text-xs text-gray-500 mt-2">Or select from subscribed chats above</p>
-          </div>
-        </div>
-
-        <!-- Message Content Section -->
-        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
-          <h3 class="text-lg font-semibold text-gray-800 mb-6 flex items-center gap-2">
-            <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-            </svg>
-            Message Content
-          </h3>
-
-          <div>
-            <label class="block text-sm font-semibold text-gray-700 mb-3">Your Message</label>
-            <textarea
-              id="msg-content-page"
-              rows="8"
-              required
-              class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base resize-none"
-              placeholder="Type your message here..."
-            ></textarea>
-            <div class="flex items-center justify-between mt-2">
-              <p class="text-xs text-gray-500">Write a clear and concise message</p>
-              <p id="char-count-page" class="text-xs text-gray-500">0 characters</p>
-            </div>
-          </div>
-        </div>
-
-        <!-- Attachments Section -->
-        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
-          <h3 class="text-lg font-semibold text-gray-800 mb-6 flex items-center gap-2">
-            <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-            </svg>
-            Attachments (Optional)
-          </h3>
-
-          <!-- File source tabs -->
-          <div class="flex gap-3 mb-6">
-            <button
-              type="button"
-              onclick="switchFileSourcePage('local')"
-              id="tab-local-page"
-              class="flex-1 px-4 py-3 text-sm font-semibold rounded-lg transition-all bg-blue-600 text-white shadow-sm"
-            >
-              <div class="flex items-center justify-center gap-2">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                Local Files
-              </div>
-            </button>
-            <button
-              type="button"
-              onclick="switchFileSourcePage('cloud')"
-              id="tab-cloud-page"
-              class="flex-1 px-4 py-3 text-sm font-semibold rounded-lg transition-all bg-gray-100 text-gray-700 hover:bg-gray-200"
-            >
-              <div class="flex items-center justify-center gap-2">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                </svg>
-                Cloud Storage
-              </div>
-            </button>
-          </div>
-
-          <!-- Local file upload -->
-          <div id="local-file-section-page" class="border-2 border-dashed border-gray-300 rounded-xl p-12 text-center hover:border-blue-500 hover:bg-blue-50 transition-all cursor-pointer">
-            <input
-              type="file"
-              id="msg-attachments-page"
-              multiple
-              class="hidden"
-              onchange="handleFileSelectPage(event)"
-            />
-            <label for="msg-attachments-page" class="cursor-pointer block">
-              <div class="flex flex-col items-center justify-center">
-                <div class="p-4 bg-blue-100 rounded-full mb-4">
-                  <svg class="w-10 h-10 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                  </svg>
-                </div>
-                <p class="text-base font-semibold text-gray-700 mb-2">Click to upload from computer</p>
-                <p class="text-sm text-gray-500">PDF, DOC, Images (Max 10MB each)</p>
-              </div>
-            </label>
-          </div>
-
-          <!-- Cloud storage file picker -->
-          <div id="cloud-file-section-page" class="hidden border border-gray-300 rounded-xl p-6 max-h-96 overflow-y-auto">
-            <div class="flex items-center justify-between mb-4">
-              <p class="text-sm font-semibold text-gray-700">Select from Cloud Storage</p>
-              <button
-                type="button"
-                onclick="refreshCloudFilesForPickerPage()"
-                class="text-xs px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+              <!-- Local file upload -->
+              <div
+                id="file-drop-zone"
+                class="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all"
+                style="border-color: var(--border-default); background: var(--bg-tertiary);"
+                onclick="document.getElementById('file-input').click()"
               >
-                🔄 Refresh
+                <input type="file" id="file-input" multiple style="display: none;" onchange="handleLocalFileSelect(event)">
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin: 0 auto 16px; display: block; color: var(--text-muted);">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                  <polyline points="17 8 12 3 7 8"/>
+                  <line x1="12" y1="3" x2="12" y2="15"/>
+                </svg>
+                <p class="text-sm" style="color: var(--text-primary);">Drop files here or click to browse</p>
+                <p class="text-xs text-muted mt-2">Supports images, documents, and other files</p>
+              </div>
+
+              <!-- Cloud storage file picker (hidden by default) -->
+              <div id="cloud-file-section-page" class="hidden border rounded-lg p-4 max-h-60 overflow-y-auto" style="border-color: var(--border-default); background: var(--bg-tertiary);">
+                <div class="flex items-center justify-between mb-3">
+                  <p class="text-sm font-medium">Select from Cloud Storage</p>
+                  <button type="button" onclick="refreshCloudFilesForPickerPage()" class="btn btn-ghost btn-sm">
+                    🔄 Refresh
+                  </button>
+                </div>
+                <div id="cloud-file-list-picker-page" class="flex flex-col gap-2">
+                  <p class="text-sm text-muted text-center py-4">Loading files...</p>
+                </div>
+              </div>
+
+              <!-- File List -->
+              <div id="file-list" class="mt-4 flex flex-col gap-2"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Sidebar -->
+        <div class="flex flex-col gap-6">
+          <!-- Schedule Options -->
+          <div class="card">
+            <h4 class="font-semibold mb-4">Schedule</h4>
+
+            <div class="form-group mb-4">
+              <label class="form-label">Date & Time</label>
+              <input type="datetime-local" id="message-datetime" class="form-input">
+            </div>
+
+            <div class="flex flex-col gap-2 mb-4">
+              <button class="btn btn-ghost btn-sm justify-start" onclick="setQuickSchedule('now')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                </svg>
+                Send Immediately
+              </button>
+              <button class="btn btn-ghost btn-sm justify-start" onclick="setQuickSchedule('1h')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"/>
+                  <polyline points="12 6 12 12 16 14"/>
+                </svg>
+                In 1 Hour
+              </button>
+              <button class="btn btn-ghost btn-sm justify-start" onclick="setQuickSchedule('tomorrow')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                  <line x1="16" y1="2" x2="16" y2="6"/>
+                  <line x1="8" y1="2" x2="8" y2="6"/>
+                  <line x1="3" y1="10" x2="21" y2="10"/>
+                </svg>
+                Tomorrow 9 AM
               </button>
             </div>
-            <div id="cloud-file-list-picker-page" class="space-y-2">
-              <p class="text-sm text-gray-500 text-center py-8">Loading files...</p>
+          </div>
+
+          <!-- Actions -->
+          <div class="card">
+            <h4 class="font-semibold mb-4">Actions</h4>
+            <div class="flex flex-col gap-3">
+              <button class="btn btn-primary w-full" onclick="submitScheduledMessage()">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="22" y1="2" x2="11" y2="13"/>
+                  <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                </svg>
+                Schedule Message
+              </button>
+              <button class="btn btn-secondary w-full" onclick="saveDraft()">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                  <polyline points="17 21 17 13 7 13 7 21"/>
+                  <polyline points="7 3 7 8 15 8"/>
+                </svg>
+                Save Draft
+              </button>
+              <button class="btn btn-ghost w-full" onclick="clearForm()">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="18" y1="6" x2="6" y2="18"/>
+                  <line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+                Clear Form
+              </button>
             </div>
           </div>
 
-          <!-- Selected files display -->
-          <div id="file-list-page" class="mt-6 space-y-3"></div>
-        </div>
-
-        <!-- Schedule Time Section -->
-        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
-          <h3 class="text-lg font-semibold text-gray-800 mb-6 flex items-center gap-2">
-            <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-            Schedule Date & Time
-          </h3>
-
-          <div>
-            <label class="block text-sm font-semibold text-gray-700 mb-3">When should this message be sent?</label>
-            <input
-              type="datetime-local"
-              id="msg-schedule-page"
-              required
-              class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
-            />
-            <p class="text-xs text-gray-500 mt-2">Select the date and time for message delivery</p>
+          <!-- Tips -->
+          <div class="card" style="background: var(--accent-primary-soft); border-color: var(--border-accent);">
+            <h4 class="font-semibold mb-2" style="color: var(--accent-primary);">Tips</h4>
+            <ul class="text-sm text-muted" style="list-style: disc; padding-left: 20px;">
+              <li class="mb-1">Schedule messages during active hours for better engagement</li>
+              <li class="mb-1">Keep messages concise and clear</li>
+              <li>Attach relevant documents to provide context</li>
+            </ul>
           </div>
         </div>
-
-        <!-- Action Buttons -->
-        <div class="flex items-center justify-end gap-4 pt-4">
-          <button
-            type="button"
-            onclick="navigateTo('scheduling')"
-            class="px-6 py-3 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-all text-base font-semibold"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            class="px-8 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all text-base font-semibold flex items-center gap-2"
-          >
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-            </svg>
-            Schedule Message
-          </button>
-        </div>
-      </form>
+      </div>
     </div>
   `;
 
-  // Add character counter - use setTimeout to ensure DOM is ready
-  setTimeout(() => {
-    const contentTextarea = document.getElementById('msg-content-page');
-    const charCount = document.getElementById('char-count-page');
-    if (contentTextarea && charCount) {
-      contentTextarea.addEventListener('input', () => {
-        charCount.textContent = `${contentTextarea.value.length} characters`;
-      });
+  // Set default datetime to now + 1 hour
+  const datetimeInput = document.getElementById('message-datetime');
+  if (datetimeInput) {
+    const now = new Date();
+    now.setHours(now.getHours() + 1);
+    now.setMinutes(0);
+    datetimeInput.value = now.toISOString().slice(0, 16);
+  }
 
-      // Ensure textarea is focusable and clickable
-      contentTextarea.style.pointerEvents = 'auto';
-      contentTextarea.style.zIndex = '1';
-    }
-  }, 0);
+  // Setup drag and drop
+  setupDragAndDrop();
 }
 
-// Store for cloud files selected for attachment
-let selectedCloudFilesPage = [];
-
-/**
- * Handle selection of a subscribed chat from dropdown
- */
-function onSubscribedChatSelectPage() {
-  const select = document.getElementById('msg-subscribed-chat-page');
-  const recipientInput = document.getElementById('msg-recipient-page');
-  const platformSelect = document.getElementById('msg-platform-page');
-
-  if (select && recipientInput && select.value) {
-    const selectedOption = select.options[select.selectedIndex];
-    const chatId = select.value;
-    const platform = selectedOption.getAttribute('data-platform') || 'whatsapp';
-
-    const chat = AppState.subscribedChats.find(c => c.id === chatId);
-    if (chat) {
-      recipientInput.value = chat.name || chat.id;
-      const platformLower = platform.toLowerCase();
-      if (['whatsapp', 'sms', 'telegram', 'email'].includes(platformLower)) {
-        platformSelect.value = platformLower;
-      }
-    }
+// Character counter
+function updateCharCount() {
+  const textarea = document.getElementById('message-content');
+  const counter = document.getElementById('char-count');
+  if (textarea && counter) {
+    counter.textContent = textarea.value.length;
   }
 }
 
-/**
- * Refresh subscribed chats in the page
- */
-async function refreshSubscribedChatsInPage() {
-  try {
-    showNotification('Refreshing subscribed chats...', 'info');
-    await AzureVMAPI.fetchSubscribedChats();
-    showNotification(`Loaded ${AppState.subscribedChats.length} subscribed chat(s)`, 'success');
-    renderScheduleMessagePage();
-  } catch (error) {
-    showNotification('Failed to refresh: ' + error.message, 'error');
-  }
-}
-
-/**
- * Toggle recipient input visibility
- */
-function toggleRecipientInputPage() {
-  // Placeholder for platform-specific logic
-}
-
-/**
- * Handle file selection from local file input
- */
-function handleFileSelectPage(event) {
+// Local file handling
+function handleLocalFileSelect(event) {
   const files = event.target.files;
-  updateFileListDisplay();
+  if (files) {
+    Array.from(files).forEach(file => {
+      if (!selectedLocalFiles.find(f => f.name === file.name && f.size === file.size)) {
+        selectedLocalFiles.push(file);
+      }
+    });
+    renderFileList();
+  }
 }
 
-/**
- * Switch between local and cloud file sources
- */
+function removeLocalFile(index) {
+  selectedLocalFiles.splice(index, 1);
+  renderFileList();
+}
+
+// Switch file source tabs
 function switchFileSourcePage(source) {
-  const localSection = document.getElementById('local-file-section-page');
+  const dropZone = document.getElementById('file-drop-zone');
   const cloudSection = document.getElementById('cloud-file-section-page');
   const tabLocal = document.getElementById('tab-local-page');
   const tabCloud = document.getElementById('tab-cloud-page');
 
   if (source === 'local') {
-    localSection.classList.remove('hidden');
-    cloudSection.classList.add('hidden');
-    tabLocal.className = 'flex-1 px-4 py-3 text-sm font-semibold rounded-lg transition-all bg-blue-600 text-white shadow-sm';
-    tabCloud.className = 'flex-1 px-4 py-3 text-sm font-semibold rounded-lg transition-all bg-gray-100 text-gray-700 hover:bg-gray-200';
+    if (dropZone) dropZone.classList.remove('hidden');
+    if (cloudSection) cloudSection.classList.add('hidden');
+    if (tabLocal) tabLocal.className = 'btn btn-primary btn-sm flex-1';
+    if (tabCloud) tabCloud.className = 'btn btn-secondary btn-sm flex-1';
   } else {
-    localSection.classList.add('hidden');
-    cloudSection.classList.remove('hidden');
-    tabLocal.className = 'flex-1 px-4 py-3 text-sm font-semibold rounded-lg transition-all bg-gray-100 text-gray-700 hover:bg-gray-200';
-    tabCloud.className = 'flex-1 px-4 py-3 text-sm font-semibold rounded-lg transition-all bg-blue-600 text-white shadow-sm';
+    if (dropZone) dropZone.classList.add('hidden');
+    if (cloudSection) cloudSection.classList.remove('hidden');
+    if (tabLocal) tabLocal.className = 'btn btn-secondary btn-sm flex-1';
+    if (tabCloud) tabCloud.className = 'btn btn-primary btn-sm flex-1';
     loadCloudFilesForPickerPage();
   }
 }
 
-/**
- * Load cloud files into the picker
- */
+// Load cloud files
 async function loadCloudFilesForPickerPage() {
   const cloudFileList = document.getElementById('cloud-file-list-picker-page');
   if (!cloudFileList) return;
 
-  cloudFileList.innerHTML = '<p class="text-sm text-gray-500 text-center py-8">Loading files...</p>';
+  cloudFileList.innerHTML = '<p class="text-sm text-muted text-center py-4">Loading files...</p>';
 
   try {
     let files = [];
-    if (AppState.activeDocumentSource === 'googledrive' && AppState.googleDriveConnected) {
-      files = await GoogleDriveAPI.getGoogleDriveFiles();
-    } else if (AppState.isAuthenticated) {
-      files = await MicrosoftGraphAPI.getOneDriveFiles();
+    if (AppState.googleDriveConnected) {
+      const gdFiles = await GoogleDriveAPI.getGoogleDriveFiles();
+      files = files.concat(gdFiles || []);
+    }
+    if (AppState.isAuthenticated) {
+      const odFiles = await MicrosoftGraphAPI.getOneDriveFiles();
+      files = files.concat(odFiles || []);
     }
 
-    if (files.length === 0) {
-      cloudFileList.innerHTML = '<p class="text-sm text-gray-500 text-center py-8">No files found. Please connect to OneDrive or Google Drive.</p>';
+    if (!files || files.length === 0) {
+      cloudFileList.innerHTML = '<p class="text-sm text-muted text-center py-4">No files found. Connect to OneDrive or Google Drive.</p>';
       return;
     }
 
-    cloudFileList.innerHTML = files.map(file => `
-      <div class="flex items-center gap-3 p-3 hover:bg-gray-50 rounded-lg border border-gray-200 cursor-pointer transition-colors" onclick="toggleCloudFileSelectionPage('${file.id}', '${file.title.replace(/'/g, "\\'")}', '${file.source}')">
-        <input type="checkbox" id="cloud-file-page-${file.id}" class="w-4 h-4 text-blue-600" onclick="event.stopPropagation(); toggleCloudFileSelectionPage('${file.id}', '${file.title.replace(/'/g, "\\'")}', '${file.source}')">
-        <div class="flex-1 min-w-0">
-          <p class="text-sm font-medium text-gray-700 truncate">${file.title}</p>
-          <p class="text-xs text-gray-500">${file.source === 'onedrive' ? 'OneDrive' : 'Google Drive'} • ${formatFileSize(file.size || 0)}</p>
+    cloudFileList.innerHTML = files.map(file => {
+      const isSelected = selectedCloudFilesPage.find(f => f.id === file.id);
+      return `
+        <div class="flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all ${isSelected ? 'selected' : ''}"
+             style="border: 1px solid var(--border-subtle); ${isSelected ? 'background: var(--accent-primary-soft);' : ''}"
+             onclick="toggleCloudFileSelectionPage('${file.id}', '${(file.title || '').replace(/'/g, "\\'")}', '${file.source}')">
+          <input type="checkbox" id="cloud-file-page-${file.id}" ${isSelected ? 'checked' : ''} class="w-4 h-4" onclick="event.stopPropagation();">
+          <div class="flex-1 min-w-0">
+            <p class="text-sm font-medium truncate">${file.title || 'Untitled'}</p>
+            <p class="text-xs text-muted">${file.source === 'onedrive' ? 'OneDrive' : 'Google Drive'} • ${formatFileSize(file.size || 0)}</p>
+          </div>
         </div>
-      </div>
-    `).join('');
+      `;
+    }).join('');
   } catch (error) {
     console.error('Error loading cloud files:', error);
-    cloudFileList.innerHTML = '<p class="text-sm text-red-500 text-center py-8">Failed to load files. Please try again.</p>';
+    cloudFileList.innerHTML = '<p class="text-sm text-center py-4" style="color: var(--error);">Failed to load files.</p>';
   }
 }
 
-/**
- * Toggle cloud file selection
- */
+// Toggle cloud file selection
 function toggleCloudFileSelectionPage(fileId, fileName, source) {
-  const checkbox = document.getElementById(`cloud-file-page-${fileId}`);
-  if (!checkbox) return;
+  const existingIndex = selectedCloudFilesPage.findIndex(f => f.id === fileId);
 
-  checkbox.checked = !checkbox.checked;
-
-  if (checkbox.checked) {
-    selectedCloudFilesPage.push({ id: fileId, name: fileName, source: source });
+  if (existingIndex >= 0) {
+    selectedCloudFilesPage.splice(existingIndex, 1);
   } else {
-    selectedCloudFilesPage = selectedCloudFilesPage.filter(f => f.id !== fileId);
+    selectedCloudFilesPage.push({ id: fileId, name: fileName, source: source });
   }
 
-  updateFileListDisplay();
+  const checkbox = document.getElementById(`cloud-file-page-${fileId}`);
+  if (checkbox) checkbox.checked = existingIndex < 0;
+
+  renderFileList();
 }
 
-/**
- * Refresh cloud files in picker
- */
 async function refreshCloudFilesForPickerPage() {
   await loadCloudFilesForPickerPage();
   showNotification('Cloud files refreshed', 'success');
 }
 
-/**
- * Update the display of selected files
- */
-function updateFileListDisplay() {
-  const fileList = document.getElementById('file-list-page');
+// Render combined file list
+function renderFileList() {
+  const fileList = document.getElementById('file-list');
   if (!fileList) return;
 
-  const fileInput = document.getElementById('msg-attachments-page');
-  const localFiles = fileInput ? Array.from(fileInput.files) : [];
+  const allFiles = [];
 
-  fileList.innerHTML = '';
+  selectedLocalFiles.forEach((file, index) => {
+    allFiles.push({ type: 'local', index, name: file.name, size: file.size, source: 'Local' });
+  });
 
-  // Show cloud files
   selectedCloudFilesPage.forEach((file, index) => {
-    const fileItem = document.createElement('div');
-    fileItem.className = 'flex items-center justify-between p-4 bg-blue-50 border border-blue-200 rounded-lg';
-    fileItem.innerHTML = `
-      <div class="flex items-center gap-3 flex-1 min-w-0">
-        <div class="p-2 bg-blue-100 rounded-lg flex-shrink-0">
-          <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-          </svg>
-        </div>
-        <div class="flex-1 min-w-0">
-          <p class="text-sm font-medium text-gray-700 truncate">${file.name}</p>
-          <p class="text-xs text-blue-600 mt-0.5">☁️ From ${file.source === 'onedrive' ? 'OneDrive' : 'Google Drive'}</p>
-        </div>
-      </div>
-      <button
-        type="button"
-        onclick="removeCloudFilePage(${index})"
-        class="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors ml-2 flex-shrink-0"
-        title="Remove file"
-      >
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-        </svg>
-      </button>
-    `;
-    fileList.appendChild(fileItem);
+    allFiles.push({ type: 'cloud', index, id: file.id, name: file.name, source: file.source === 'onedrive' ? 'OneDrive' : 'Google Drive' });
   });
 
-  // Show local files
-  localFiles.forEach((file, index) => {
-    const fileItem = document.createElement('div');
-    fileItem.className = 'flex items-center justify-between p-4 bg-white border border-gray-200 rounded-lg hover:shadow-sm transition-shadow';
-    fileItem.innerHTML = `
-      <div class="flex items-center gap-3 flex-1 min-w-0">
-        <div class="p-2 bg-gray-100 rounded-lg flex-shrink-0">
-          <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-          </svg>
-        </div>
-        <div class="flex-1 min-w-0">
-          <p class="text-sm font-medium text-gray-700 truncate">${file.name}</p>
-          <p class="text-xs text-gray-500 mt-0.5">📁 Local • ${(file.size / 1024).toFixed(1)} KB</p>
-        </div>
-      </div>
-      <button
-        type="button"
-        onclick="removeFilePage(${index})"
-        class="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors ml-2 flex-shrink-0"
-        title="Remove file"
-      >
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-        </svg>
-      </button>
-    `;
-    fileList.appendChild(fileItem);
-  });
-}
-
-/**
- * Remove file from local file selection
- */
-function removeFilePage(index) {
-  const fileInput = document.getElementById('msg-attachments-page');
-  if (!fileInput) return;
-
-  const dt = new DataTransfer();
-  const files = fileInput.files;
-
-  for (let i = 0; i < files.length; i++) {
-    if (i !== index) {
-      dt.items.add(files[i]);
-    }
+  if (allFiles.length === 0) {
+    fileList.innerHTML = '';
+    return;
   }
 
-  fileInput.files = dt.files;
-  updateFileListDisplay();
+  fileList.innerHTML = allFiles.map(file => `
+    <div class="flex items-center gap-3 p-3 rounded-lg" style="background: var(--bg-tertiary); border: 1px solid var(--border-subtle);">
+      <div class="stat-icon ${file.type === 'cloud' ? 'blue' : 'teal'}" style="width: 36px; height: 36px;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          ${file.type === 'cloud'
+            ? '<path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>'
+            : '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>'
+          }
+        </svg>
+      </div>
+      <div class="flex-1 min-w-0">
+        <p class="text-sm font-medium truncate">${file.name}</p>
+        <p class="text-xs text-muted">${file.source}${file.size ? ' • ' + formatFileSize(file.size) : ''}</p>
+      </div>
+      <button class="btn-icon" onclick="${file.type === 'local' ? `removeLocalFile(${file.index})` : `removeCloudFile('${file.id}')`}" style="width: 32px; height: 32px; color: var(--error);">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+  `).join('');
 }
 
-/**
- * Remove cloud file from selection
- */
-function removeCloudFilePage(index) {
-  const file = selectedCloudFilesPage[index];
-  selectedCloudFilesPage.splice(index, 1);
-
-  const checkbox = document.getElementById(`cloud-file-page-${file.id}`);
+function removeCloudFile(fileId) {
+  selectedCloudFilesPage = selectedCloudFilesPage.filter(f => f.id !== fileId);
+  const checkbox = document.getElementById(`cloud-file-page-${fileId}`);
   if (checkbox) checkbox.checked = false;
-
-  updateFileListDisplay();
+  renderFileList();
 }
 
-/**
- * Schedule a message from the dedicated page
- */
-async function scheduleMessageFromPage(event) {
-  event.preventDefault();
+// Drag and drop
+function setupDragAndDrop() {
+  const dropZone = document.getElementById('file-drop-zone');
+  if (!dropZone) return;
 
-  if (!AppState.azureVmUrl) {
-    showNotification('Please configure Azure VM URL in Settings first', 'error');
-    return;
-  }
+  ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+    dropZone.addEventListener(eventName, e => { e.preventDefault(); e.stopPropagation(); }, false);
+  });
 
-  const platform = document.getElementById('msg-platform-page').value;
-  const recipient = document.getElementById('msg-recipient-page').value;
-  const content = document.getElementById('msg-content-page').value;
-  const scheduledTime = document.getElementById('msg-schedule-page').value;
-  const fileInput = document.getElementById('msg-attachments-page');
-  const selectedChatSelect = document.getElementById('msg-subscribed-chat-page');
+  ['dragenter', 'dragover'].forEach(eventName => {
+    dropZone.addEventListener(eventName, () => {
+      dropZone.style.borderColor = 'var(--accent-primary)';
+      dropZone.style.background = 'var(--accent-primary-soft)';
+    });
+  });
 
-  if (!content || !scheduledTime) {
-    showNotification('Please fill in all required fields', 'error');
-    return;
-  }
+  ['dragleave', 'drop'].forEach(eventName => {
+    dropZone.addEventListener(eventName, () => {
+      dropZone.style.borderColor = 'var(--border-default)';
+      dropZone.style.background = 'var(--bg-tertiary)';
+    });
+  });
 
-  // Get the target_user_id from selected chat
-  let targetUserId = null;
-  if (selectedChatSelect && selectedChatSelect.value) {
-    const selectedChat = AppState.subscribedChats.find(c => c.id === selectedChatSelect.value);
-    if (selectedChat && selectedChat.user_id) {
-      targetUserId = selectedChat.user_id;
+  dropZone.addEventListener('drop', (e) => {
+    const files = e.dataTransfer.files;
+    if (files) {
+      Array.from(files).forEach(file => {
+        if (!selectedLocalFiles.find(f => f.name === file.name && f.size === file.size)) {
+          selectedLocalFiles.push(file);
+        }
+      });
+      renderFileList();
     }
+  });
+}
+
+// Quick schedule
+function setQuickSchedule(option) {
+  const datetimeInput = document.getElementById('message-datetime');
+  if (!datetimeInput) return;
+
+  const now = new Date();
+  switch (option) {
+    case 'now': now.setMinutes(now.getMinutes() + 1); break;
+    case '1h': now.setHours(now.getHours() + 1); break;
+    case 'tomorrow': now.setDate(now.getDate() + 1); now.setHours(9, 0, 0, 0); break;
   }
+  datetimeInput.value = now.toISOString().slice(0, 16);
+  showNotification('Schedule time updated', 'info');
+}
 
-  if (!targetUserId && recipient) {
-    const chatByName = AppState.subscribedChats.find(c =>
-      c.name === recipient || c.id === recipient || c.chat_id === recipient
-    );
-    if (chatByName && chatByName.user_id) {
-      targetUserId = chatByName.user_id;
-    }
-  }
+// Submit message
+async function submitScheduledMessage() {
+  const recipientSelect = document.getElementById('message-recipient');
+  const recipientValue = recipientSelect ? recipientSelect.value : '';
+  const content = document.getElementById('message-content')?.value || '';
+  const datetime = document.getElementById('message-datetime')?.value || '';
 
-  if (!targetUserId) {
-    showNotification('Could not determine target user. Please select a chat from the dropdown.', 'error');
-    return;
-  }
+  if (!recipientValue) { showNotification('Please select a recipient', 'warning'); return; }
+  if (!content.trim()) { showNotification('Please enter a message', 'warning'); return; }
+  if (!datetime) { showNotification('Please select a schedule time', 'warning'); return; }
 
-  const scheduledTimestamp = new Date(scheduledTime).toISOString();
-  const localFiles = fileInput && fileInput.files.length > 0 ? Array.from(fileInput.files) : [];
+  const selectedChat = (AppState.subscribedChats || []).find(c => c.id === recipientValue || c.chat_id === recipientValue);
+  if (!selectedChat) { showNotification('Selected chat not found. Please refresh.', 'error'); return; }
 
-  showNotification('Preparing files and scheduling message...', 'info');
+  const targetUserId = selectedChat.user_id;
+  if (!targetUserId) { showNotification('Could not determine target user ID.', 'error'); return; }
 
   try {
+    showNotification('Preparing message...', 'info');
+
     const downloadedCloudFiles = [];
-
     if (selectedCloudFilesPage.length > 0) {
-      showNotification(`Downloading ${selectedCloudFilesPage.length} file(s) from cloud storage...`, 'info');
-
+      showNotification(`Downloading ${selectedCloudFilesPage.length} cloud file(s)...`, 'info');
       for (const cloudFile of selectedCloudFilesPage) {
         try {
           let downloadedFile;
-
           if (cloudFile.source === 'onedrive') {
-            // OneDrive download only needs fileId and fileName (already in cloudFile)
             downloadedFile = await downloadFileFromOneDrive(cloudFile.id, cloudFile.name);
           } else if (cloudFile.source === 'googledrive') {
-            // Google Drive needs mimeType from full file metadata
-            const fullFile = AppState.documents.find(d => d.id === cloudFile.id);
-            if (!fullFile) {
-              throw new Error(`File metadata not found for: ${cloudFile.name}`);
-            }
+            const fullFile = (AppState.documents || []).find(d => d.id === cloudFile.id);
+            if (!fullFile) throw new Error(`File metadata not found: ${cloudFile.name}`);
             downloadedFile = await downloadFileFromGoogleDrive(cloudFile.id, cloudFile.name, fullFile.mimeType);
-          } else {
-            throw new Error(`Unknown file source: ${cloudFile.source}`);
           }
-
-          downloadedCloudFiles.push(downloadedFile);
+          if (downloadedFile) downloadedCloudFiles.push(downloadedFile);
         } catch (error) {
           console.error(`Failed to download ${cloudFile.name}:`, error);
-          showNotification(`Failed to download ${cloudFile.name}: ${error.message}`, 'error');
+          showNotification(`Failed to download ${cloudFile.name}`, 'error');
         }
-      }
-
-      if (downloadedCloudFiles.length > 0) {
-        showNotification(`Downloaded ${downloadedCloudFiles.length} file(s) successfully`, 'success');
       }
     }
 
-    const allFiles = [...localFiles, ...downloadedCloudFiles];
-
+    const allFiles = [...selectedLocalFiles, ...downloadedCloudFiles];
     showNotification('Scheduling message...', 'info');
 
-    const result = await AzureVMAPI.scheduleMessage(targetUserId, content, scheduledTimestamp, allFiles);
+    const scheduledTimestamp = new Date(datetime).toISOString();
+    await AzureVMAPI.scheduleMessage(targetUserId, content, scheduledTimestamp, allFiles);
 
-    const newMessage = {
-      id: result.id || result.message_id || generateId(),
-      platform: platform,
-      recipient: recipient,
-      content: content,
+    const chatName = selectedChat.name || selectedChat.chat_name || selectedChat.id;
+    AppState.scheduledMessages = AppState.scheduledMessages || [];
+    AppState.scheduledMessages.push({
+      id: generateId(),
+      recipient: chatName,
       message_content: content,
-      scheduled_time: scheduledTime,
-      scheduled_timestamp: scheduledTimestamp,
+      scheduled_time: scheduledTimestamp,
       target_user_id: targetUserId,
-      status: result.status || 'pending',
-      created_at: new Date().toISOString(),
-      from_sender: AppState.userId, // Track which user created this message
-      server_response: result
-    };
-
-    AppState.scheduledMessages.push(newMessage);
-    selectedCloudFilesPage = [];
-
-    navigateTo('scheduling');
+      status: 'pending',
+      files: allFiles.map(f => ({ name: f.name, size: f.size }))
+    });
 
     const fileCountMsg = allFiles.length > 0 ? ` with ${allFiles.length} file(s)` : '';
-    showNotification(
-      `✓ Message scheduled successfully${fileCountMsg}! Will be sent ${formatDateTime(scheduledTime)}`,
-      'success'
-    );
+    showNotification(`Message scheduled successfully${fileCountMsg}!`, 'success');
+    navigateTo('scheduling');
   } catch (error) {
     console.error('Error scheduling message:', error);
     showNotification('Failed to schedule message: ' + error.message, 'error');
   }
 }
 
-// Export functions to global scope
+function saveDraft() { showNotification('Draft saved (feature coming soon)', 'info'); }
+
+function clearForm() {
+  const recipientSelect = document.getElementById('message-recipient');
+  const contentTextarea = document.getElementById('message-content');
+  if (recipientSelect) recipientSelect.value = '';
+  if (contentTextarea) contentTextarea.value = '';
+  selectedLocalFiles = [];
+  selectedCloudFilesPage = [];
+  renderFileList();
+  updateCharCount();
+  showNotification('Form cleared', 'info');
+}
+
+// Export to global scope
 if (typeof window !== 'undefined') {
   window.renderScheduleMessagePage = renderScheduleMessagePage;
-  window.onSubscribedChatSelectPage = onSubscribedChatSelectPage;
-  window.refreshSubscribedChatsInPage = refreshSubscribedChatsInPage;
-  window.toggleRecipientInputPage = toggleRecipientInputPage;
-  window.handleFileSelectPage = handleFileSelectPage;
+  window.updateCharCount = updateCharCount;
+  window.handleLocalFileSelect = handleLocalFileSelect;
+  window.removeLocalFile = removeLocalFile;
   window.switchFileSourcePage = switchFileSourcePage;
   window.loadCloudFilesForPickerPage = loadCloudFilesForPickerPage;
   window.toggleCloudFileSelectionPage = toggleCloudFileSelectionPage;
   window.refreshCloudFilesForPickerPage = refreshCloudFilesForPickerPage;
-  window.updateFileListDisplay = updateFileListDisplay;
-  window.removeFilePage = removeFilePage;
-  window.removeCloudFilePage = removeCloudFilePage;
-  window.scheduleMessageFromPage = scheduleMessageFromPage;
+  window.renderFileList = renderFileList;
+  window.removeCloudFile = removeCloudFile;
+  window.setQuickSchedule = setQuickSchedule;
+  window.submitScheduledMessage = submitScheduledMessage;
+  window.saveDraft = saveDraft;
+  window.clearForm = clearForm;
 }

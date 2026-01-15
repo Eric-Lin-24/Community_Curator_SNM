@@ -1,223 +1,243 @@
 // ============================================
-// DASHBOARD VIEW
+// DASHBOARD VIEW (REAL SYSTEM SUMMARY)
 // ============================================
 
-/**
- * Create a stat card component
- * @param {string} title - Card title
- * @param {number} value - Numeric value to display
- * @param {string} subtitle - Subtitle text
- * @param {string} color - Color theme (blue, green, orange, purple)
- * @param {string} icon - SVG icon markup
- * @returns {string} HTML string for the stat card
- */
-function createStatCard(title, value, subtitle, color, icon) {
-  const colors = {
-    blue: { text: 'text-blue-600', bg: 'bg-blue-50' },
-    green: { text: 'text-green-600', bg: 'bg-green-50' },
-    orange: { text: 'text-orange-600', bg: 'bg-orange-50' },
-    purple: { text: 'text-purple-600', bg: 'bg-purple-50' }
-  };
+function formatRelativeTime(iso) {
+  if (!iso) return 'Never';
+  const t = new Date(iso).getTime();
+  const now = Date.now();
+  const diff = Math.max(0, now - t);
 
-  const c = colors[color];
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
+}
+
+function isOverdueMessage(m) {
+  if (!m || !m.scheduled_time) return false;
+  if (m.status === 'sent') return false;
+  return new Date(m.scheduled_time).getTime() < Date.now();
+}
+
+function getNextPendingMessage(messages) {
+  const pending = (messages || [])
+    .filter(m => m.status !== 'sent' && m.scheduled_time)
+    .sort((a, b) => new Date(a.scheduled_time) - new Date(b.scheduled_time));
+  return pending[0] || null;
+}
+
+function dashboardStatCard({ icon, title, value, meta, tone = 'teal' }) {
+  // tones: teal, purple, blue, pink exist in CSS stat-icon presets :contentReference[oaicite:4]{index=4}
+  return `
+    <div class="card stat-card">
+      <div class="stat-icon ${tone}">
+        ${icon}
+      </div>
+      <div class="stat-value">${value}</div>
+      <div class="stat-label">${title}</div>
+      <div class="text-xs text-muted">${meta || ''}</div>
+    </div>
+  `;
+}
+
+function dashboardStatusRow(label, value, statusDot /* success|warning|error|muted */) {
+  const color =
+    statusDot === 'success' ? 'var(--success)' :
+    statusDot === 'warning' ? 'var(--warning)' :
+    statusDot === 'error' ? 'var(--error)' :
+    'var(--text-muted)';
 
   return `
-    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-      <div class="flex items-start justify-between">
-        <div class="flex-1">
-          <p class="text-sm font-medium text-gray-600 mb-1">${title}</p>
-          <p class="text-3xl font-bold text-gray-800 mb-1">${value.toLocaleString()}</p>
-          <p class="text-xs text-gray-500">${subtitle}</p>
+    <div class="flex justify-between items-center py-2">
+      <span class="text-muted">${label}</span>
+      <span class="flex items-center gap-2">
+        <span style="color:${color};">●</span>
+        <span>${value}</span>
+      </span>
+    </div>
+  `;
+}
+
+function renderDashboard() {
+  const content = document.getElementById('content');
+
+  const docs = AppState.documents || [];
+  const oneDriveDocs = docs.filter(d => (d.source || 'onedrive') === 'onedrive');
+  const googleDocs = docs.filter(d => d.source === 'googledrive');
+
+  const pendingMessages = (AppState.scheduledMessages || []).filter(m => m.status !== 'sent');
+  const overdue = pendingMessages.filter(isOverdueMessage);
+  const nextMsg = getNextPendingMessage(AppState.scheduledMessages || []);
+
+  const totalFormResponses = (AppState.microsoftForms || []).reduce(
+    (sum, f) => sum + (f.responseCount || 0),
+    0
+  );
+
+  const msConnected = !!(AppState.isAuthenticated && AppState.userProfile);
+  const gdConnected = !!AppState.googleDriveConnected;
+  const vmConfigured = !!(AppState.azureVmUrl && String(AppState.azureVmUrl).trim().length > 0);
+
+  const vmHealthy =
+    vmConfigured &&
+    !AppState.loadingSubscribedChats &&
+    Array.isArray(AppState.subscribedChats);
+
+  content.innerHTML = `
+    <div class="animate-in">
+      <div class="grid grid-cols-4 gap-6 mb-6">
+        ${dashboardStatCard({
+          tone: msConnected ? 'teal' : 'blue',
+          title: 'Microsoft 365',
+          value: msConnected ? 'Connected' : 'Not Connected',
+          meta: msConnected ? (AppState.userProfile.name || 'Signed in') : 'Connect in Settings',
+          icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                   <path d="M4 4h7v7H4z"/><path d="M13 4h7v7h-7z"/><path d="M4 13h7v7H4z"/><path d="M13 13h7v7h-7z"/>
+                 </svg>`
+        })}
+        ${dashboardStatCard({
+          tone: gdConnected ? 'purple' : 'blue',
+          title: 'Google Drive',
+          value: gdConnected ? 'Connected' : 'Not Connected',
+          meta: gdConnected ? (AppState.googleDriveEmail || 'Authorized') : 'Connect in Settings',
+          icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                   <path d="M7 3h10l4 7-5 11H6L1 10z"/>
+                 </svg>`
+        })}
+        ${dashboardStatCard({
+          tone: 'pink',
+          title: 'Documents Synced',
+          value: (oneDriveDocs.length + googleDocs.length).toString(),
+          meta: `OneDrive: ${oneDriveDocs.length} • Drive: ${googleDocs.length}`,
+          icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                   <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                   <path d="M14 2v6h6"/>
+                 </svg>`
+        })}
+        ${dashboardStatCard({
+          tone: overdue.length > 0 ? 'blue' : 'teal',
+          title: 'Pending Messages',
+          value: pendingMessages.length.toString(),
+          meta: overdue.length > 0 ? `${overdue.length} overdue` : (nextMsg ? `Next: ${new Date(nextMsg.scheduled_time).toLocaleString()}` : 'No upcoming'),
+          icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                   <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                 </svg>`
+        })}
+      </div>
+
+      <div class="grid grid-cols-2 gap-6">
+        <div class="card">
+          <div class="flex justify-between items-center mb-4">
+            <div>
+              <h3 class="font-semibold">System Health</h3>
+              <p class="text-xs text-muted">Live status pulled from current AppState</p>
+            </div>
+            <div class="flex gap-2">
+              <button class="btn btn-secondary btn-sm" onclick="refreshCurrentView()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                </svg>
+                Refresh
+              </button>
+              <button class="btn btn-primary btn-sm" onclick="navigateTo('settings')">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33H9a1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 4.6 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 2.6 15V9A1.65 1.65 0 0 0 1.09 8H1a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 2.6 2.6l.06-.06a2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 7 2.6h6a1.65 1.65 0 0 0 1.51-1H15a2 2 0 0 1 2 2v.09A1.65 1.65 0 0 0 19.4 4.6l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 21.4 9v6z"/>
+                </svg>
+                Settings
+              </button>
+            </div>
+          </div>
+
+          <div class="divider"></div>
+
+          ${dashboardStatusRow(
+            'OneDrive sync',
+            formatRelativeTime(AppState.lastSync?.onedrive),
+            AppState.lastSync?.onedrive ? 'success' : (msConnected ? 'warning' : 'muted')
+          )}
+          ${dashboardStatusRow(
+            'Google Drive sync',
+            formatRelativeTime(AppState.lastSync?.googledrive),
+            AppState.lastSync?.googledrive ? 'success' : (gdConnected ? 'warning' : 'muted')
+          )}
+          ${dashboardStatusRow(
+            'Azure VM URL',
+            vmConfigured ? AppState.azureVmUrl : 'Not set',
+            vmConfigured ? 'success' : 'warning'
+          )}
+          ${dashboardStatusRow(
+            'Subscribed chats',
+            vmHealthy ? `${(AppState.subscribedChats || []).length}` : (vmConfigured ? 'Not loaded' : '—'),
+            vmHealthy ? 'success' : (vmConfigured ? 'warning' : 'muted')
+          )}
+          ${dashboardStatusRow(
+            'Chats last refreshed',
+            formatRelativeTime(AppState.lastSync?.subscribedChats),
+            AppState.lastSync?.subscribedChats ? 'success' : (vmConfigured ? 'warning' : 'muted')
+          )}
         </div>
-        <div class="p-3 rounded-lg ${c.bg}">
-          <div class="${c.text}">${icon}</div>
+
+        <div class="card">
+          <div class="flex justify-between items-center mb-4">
+            <div>
+              <h3 class="font-semibold">Activity Snapshot</h3>
+              <p class="text-xs text-muted">No placeholders — computed from real in-memory state</p>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="navigateTo('documents')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>
+              </svg>
+              View Docs
+            </button>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="flex justify-between py-2">
+            <span class="text-muted">Forms</span>
+            <span>${(AppState.microsoftForms || []).length}</span>
+          </div>
+          <div class="flex justify-between py-2">
+            <span class="text-muted">Total form responses</span>
+            <span>${totalFormResponses}</span>
+          </div>
+          <div class="flex justify-between py-2">
+            <span class="text-muted">Pending scheduled messages</span>
+            <span>${pendingMessages.length}</span>
+          </div>
+          <div class="flex justify-between py-2">
+            <span class="text-muted">Overdue scheduled messages</span>
+            <span>${overdue.length}</span>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="flex gap-2">
+            <button class="btn btn-primary w-full" onclick="navigateTo('scheduling')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+              </svg>
+              Go to Messages
+            </button>
+            <button class="btn btn-secondary w-full" onclick="navigateTo('forms')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+              </svg>
+              Go to Forms
+            </button>
+          </div>
         </div>
       </div>
     </div>
   `;
 }
 
-/**
- * Render the dashboard view
- * Shows overview statistics, upcoming scheduled messages, and recent documents
- */
-function renderDashboard() {
-  const content = document.getElementById('content');
-
-  const activeConversations = AppState.scheduledMessages.filter(m => m.status === 'sent').length;
-  const upcomingMessages = AppState.scheduledMessages
-    .filter(m => m.status === 'pending' && new Date(m.scheduled_time) > new Date())
-    .sort((a, b) => new Date(a.scheduled_time) - new Date(b.scheduled_time))
-    .slice(0, 5);
-  const recentDocuments = [...AppState.documents]
-    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-    .slice(0, 5);
-
-  const totalFormResponses = AppState.microsoftForms.reduce((sum, form) => sum + (form.responseCount || 0), 0);
-
-  content.innerHTML = `
-    <div class="space-y-6">
-      <div>
-        <h3 class="text-2xl font-bold text-gray-800 mb-2">Overview</h3>
-        <p class="text-gray-600">Welcome back! Here's what's happening today.</p>
-      </div>
-
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        ${createStatCard('Total Documents', AppState.documents.length, 'All documents', 'blue', `
-          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
-        `)}
-        ${createStatCard('Active Conversations', activeConversations, 'Messages sent', 'green', `
-          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-          </svg>
-        `)}
-        ${createStatCard('Scheduled Messages', AppState.scheduledMessages.filter(m => m.status === 'pending').length, 'Pending delivery', 'orange', `
-          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 01-2 2z" />
-          </svg>
-        `)}
-        ${createStatCard('Form Responses', totalFormResponses, 'Total submissions', 'purple', `
-          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-          </svg>
-        `)}
-      </div>
-
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div class="bg-white rounded-xl shadow-sm border border-gray-200">
-          <div class="p-6 border-b border-gray-200">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <svg class="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <h4 class="font-semibold text-gray-800">Upcoming Scheduled Messages</h4>
-              </div>
-              <span class="text-sm text-gray-500">${upcomingMessages.length} pending</span>
-            </div>
-          </div>
-          <div class="p-6">
-            ${upcomingMessages.length === 0 ? `
-              <div class="text-center py-8 text-gray-500">
-                <svg class="w-8 h-8 mx-auto mb-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 01-2 2z" />
-                </svg>
-                <p class="text-sm">No upcoming messages</p>
-              </div>
-            ` : `
-              <div class="space-y-3">
-                ${upcomingMessages.map(msg => `
-                  <div class="flex items-start gap-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                    <div class="p-2 bg-orange-100 text-orange-600 rounded-lg">
-                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                      </svg>
-                    </div>
-                    <div class="flex-1 min-w-0">
-                      <p class="font-medium text-gray-800 text-sm mb-1">To: ${msg.recipient}</p>
-                      <p class="text-xs text-gray-600 line-clamp-2 mb-2">${msg.message_content}</p>
-                      <div class="flex items-center gap-3 text-xs text-gray-500">
-                        <span>${formatDate(msg.scheduled_time)}</span>
-                        <span>•</span>
-                        <span>${formatTime(msg.scheduled_time)}</span>
-                        <span>•</span>
-                        <span class="capitalize">${msg.platform}</span>
-                      </div>
-                    </div>
-                  </div>
-                `).join('')}
-              </div>
-            `}
-          </div>
-        </div>
-
-        <div class="bg-white rounded-xl shadow-sm border border-gray-200">
-          <div class="p-6 border-b border-gray-200">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                <h4 class="font-semibold text-gray-800">Recent Documents</h4>
-              </div>
-              <span class="text-sm text-gray-500">${AppState.documents.length} total</span>
-            </div>
-          </div>
-          <div class="p-6">
-            ${recentDocuments.length === 0 ? `
-              <div class="text-center py-8 text-gray-500">
-                <svg class="w-8 h-8 mx-auto mb-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                <p class="text-sm">No documents yet</p>
-              </div>
-            ` : `
-              <div class="space-y-3">
-                ${recentDocuments.map(doc => `
-                  <div class="flex items-start gap-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                    <div class="p-2 bg-blue-100 text-blue-600 rounded-lg">
-                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                      </svg>
-                    </div>
-                    <div class="flex-1 min-w-0">
-                      <p class="font-medium text-gray-800 text-sm mb-1">${doc.title}</p>
-                      <p class="text-xs text-gray-600 line-clamp-2 mb-2">${doc.content}</p>
-                      <div class="flex items-center gap-3 text-xs text-gray-500">
-                        <span>${formatDate(doc.created_at)}</span>
-                        <span>•</span>
-                        <span class="capitalize">${doc.source || 'local'}</span>
-                      </div>
-                    </div>
-                  </div>
-                `).join('')}
-              </div>
-            `}
-          </div>
-        </div>
-      </div>
-
-      <div class="bg-gradient-to-br from-blue-600 to-blue-700 rounded-xl shadow-sm p-6 text-white">
-        <div class="flex items-start justify-between">
-          <div>
-            <h4 class="text-xl font-semibold mb-2 flex items-center gap-2">
-              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
-              Getting Started
-            </h4>
-            <p class="text-blue-100 mb-4">Start managing your community communications effectively</p>
-            <ul class="space-y-2 text-sm text-blue-50">
-              <li class="flex items-center gap-2">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                <span>Create document collections to organize content</span>
-              </li>
-              <li class="flex items-center gap-2">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                <span>Schedule WhatsApp messages for your community</span>
-              </li>
-              <li class="flex items-center gap-2">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                <span>Use Microsoft Forms to collect data from members</span>
-              </li>
-              <li class="flex items-center gap-2">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                <span>Connect to SharePoint for document syncing</span>
-              </li>
-            </ul>
-          </div>
-        </div>
-      </div>
-    </div>
-  `;
+// Export
+if (typeof window !== 'undefined') {
+  window.renderDashboard = renderDashboard;
 }
