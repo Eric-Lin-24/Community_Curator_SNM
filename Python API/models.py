@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, Boolean, JSON
+from sqlalchemy import Column, String, DateTime, Boolean, JSON, Integer
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
 
@@ -22,3 +22,11 @@ class SubscribedUser(Base):
     chat_id = Column(String, nullable=False, unique=True)
     chat_name = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, unique=True, index=True)
+    hashed_password = Column(String)
+    salt = Column(String)

@@ -1,7 +1,7 @@
 """
 FastAPI application - REST API endpoints for scheduled message system.
 """
-from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, status
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -12,15 +12,18 @@ from dotenv import load_dotenv
 import shutil
 from pathlib import Path
 
-from database import get_db, init_db
+from database import get_db, init_db, get_user_by_username
 from models import ScheduledMessage, SubscribedUser
 from schemas import (
     ScheduleMessageRequest,
     ScheduleMessageResponse,
     SubscribeUserRequest,
-    SubscribeUserResponse
+    SubscribeUserResponse,
+    User,
+    UserCreate
 )
 from scheduler import start_message_scheduler
+from auth import create_user
 
 # Load environment variables
 load_dotenv()
@@ -48,6 +51,14 @@ async def startup_event():
     """Initialize database and start background tasks on startup"""
     init_db()
     start_message_scheduler(app)
+
+
+@app.post("/register", response_model=User, status_code=status.HTTP_201_CREATED)
+def register(user: UserCreate, db: Session = Depends(get_db)):
+    db_user = get_user_by_username(db, username=user.username)
+    if db_user:
+        raise HTTPException(status_code=400, detail="Username already registered")
+    return create_user(db=db, user=user)
 
 
 @app.post("/schedule-message", response_model=ScheduleMessageResponse)

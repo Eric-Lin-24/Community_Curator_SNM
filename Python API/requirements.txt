@@ -1,9 +1,9 @@
 fastapi
-uvicorn[standard]
+uvicorn
 sqlalchemy
-python-multipart
-pydantic
-aiofiles
+python-dotenv
 python-telegram-bot
 requests
-python-dotenv
+apscheduler
+passlib[bcrypt]
+python-jose

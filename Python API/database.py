@@ -1,6 +1,6 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
-from models import Base
+from models import Base, User
 import os
 
 # Database configuration
@@ -29,3 +29,6 @@ def get_db():
         yield db
     finally:
         db.close()
+
+def get_user_by_username(db: Session, username: str):
+    return db.query(User).filter(User.username == username).first()
