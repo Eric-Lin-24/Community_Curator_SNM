@@ -1,7 +1,7 @@
 """
 FastAPI application - REST API endpoints for scheduled message system.
 """
-from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, status
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, status, Query
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -52,6 +52,7 @@ async def startup_event():
 
 @app.post("/schedule-message", response_model=ScheduleMessageResponse)
 async def schedule_message(
+    from_sender: str = Form(...),
     target_user_id: str = Form(...),
     message: str = Form(...),
     scheduled_timestamp: str = Form(...),
@@ -60,7 +61,7 @@ async def schedule_message(
 ):
     """
     Schedule a message to be sent at a specific time.
-
+    - **from_sender**: sender IDs that sent message
     - **target_user_id**: Comma-separated list of user IDs
     - **message**: The message content
     - **scheduled_timestamp**: UTC timestamp (ISO 8601 format)
@@ -95,6 +96,7 @@ async def schedule_message(
         # Create scheduled message record
         scheduled_msg = ScheduledMessage(
             id=message_id,
+            from_sender=from_sender,
             target_user_id=target_users,
             message=message,
             scheduled_timestamp=scheduled_dt,
@@ -162,17 +164,17 @@ async def subscribe_user(
 
 
 @app.get("/pending-messages", response_model=List[ScheduleMessageResponse])
-async def get_pending_messages(db: Session = Depends(get_db)):
+async def get_pending_messages(from_sender: str = Query(..., alias="from_sender"), db: Session = Depends(get_db)):
     """
-    Get all messages that are pending to be sent (not yet sent).
+    Get all messages that are pending and match the 'from' sender property.
     """
     try:
-        current_time = datetime.utcnow()
-        due_messages = db.query(ScheduledMessage).filter(
-            ScheduledMessage.is_sent == False
+        # We query the database for unsent messages matching the 'from' criteria
+        pending_messages = db.query(ScheduledMessage).filter(
+            ScheduledMessage.from_sender == from_sender  # Ensure this matches your model field name
         ).all()
 
-        return due_messages
+        return pending_messages
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

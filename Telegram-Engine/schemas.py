@@ -9,6 +9,7 @@ class ScheduleMessageRequest(BaseModel):
 
 class ScheduleMessageResponse(BaseModel):
     id: str
+    from_sender: str
     target_user_id: List[str]
     message: str
     scheduled_timestamp: datetime
