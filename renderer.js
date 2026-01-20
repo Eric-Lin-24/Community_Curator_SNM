@@ -59,18 +59,6 @@ async function initializeSubscribedChats() {
   }
 }
 
-/**
- * Load Microsoft Forms
- */
-async function loadForms() {
-  if (AppState.isAuthenticated) {
-    try {
-      AppState.microsoftForms = await MicrosoftGraphAPI.getForms();
-    } catch (error) {
-      console.error('Error loading forms:', error);
-    }
-  }
-}
 
 // ============================================
 // MODAL FUNCTIONS
@@ -199,13 +187,6 @@ function restoreAppLayout() {
           <span class="nav-badge" id="message-badge" style="display: none;">0</span>
         </button>
 
-        <button class="nav-item" data-view="forms" onclick="navigateTo('forms')">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M9 11l3 3L22 4"/>
-            <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
-          </svg>
-          <span>Forms</span>
-        </button>
 
         <span class="nav-section-title">System</span>
 
@@ -649,7 +630,6 @@ function handleLogout() {
   // Clear other data
   AppState.documents = [];
   AppState.scheduledMessages = [];
-  AppState.microsoftForms = [];
   AppState.subscribedChats = [];
 
   console.log('✓ User logged out');

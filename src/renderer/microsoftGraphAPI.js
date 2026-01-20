@@ -161,7 +161,6 @@ const MicrosoftGraphAPI = {
       AppState.accessToken = null;
       AppState.userProfile = null;
       AppState.documents = [];
-      AppState.microsoftForms = [];
 
       console.log('✅ Logout successful');
       console.log('   → All credentials cleared\n');
@@ -244,65 +243,6 @@ const MicrosoftGraphAPI = {
     }
   },
 
-  async getForms() {
-    if (!AppState.isAuthenticated || !AppState.accessToken) {
-      console.log('Not authenticated');
-      return [];
-    }
-
-    try {
-      const response = await fetch(`${this.baseUrl}/me/drive/root/children?$filter=folder ne null`, {
-        headers: {
-          'Authorization': `Bearer ${AppState.accessToken}`
-        }
-      });
-
-      if (response.ok) {
-        return this.getDemoForms();
-      } else {
-        console.log('Using demo forms data');
-        return this.getDemoForms();
-      }
-    } catch (error) {
-      console.error('Error fetching forms:', error);
-      return this.getDemoForms();
-    }
-  },
-
-  getDemoForms() {
-    return [
-      {
-        id: 'form_1',
-        title: 'Community Feedback Survey',
-        description: 'Help us improve our community services',
-        webUrl: 'https://forms.office.com/Pages/ResponsePage.aspx?id=example1',
-        createdDateTime: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-        lastModifiedDateTime: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-        responseCount: 24,
-        isAcceptingResponses: true
-      },
-      {
-        id: 'form_2',
-        title: 'Event Registration Form',
-        description: 'Register for our upcoming community event',
-        webUrl: 'https://forms.office.com/Pages/ResponsePage.aspx?id=example2',
-        createdDateTime: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString(),
-        lastModifiedDateTime: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-        responseCount: 47,
-        isAcceptingResponses: true
-      },
-      {
-        id: 'form_3',
-        title: 'Volunteer Interest Form',
-        description: 'Sign up to volunteer with our organization',
-        webUrl: 'https://forms.office.com/Pages/ResponsePage.aspx?id=example3',
-        createdDateTime: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-        lastModifiedDateTime: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-        responseCount: 15,
-        isAcceptingResponses: false
-      }
-    ];
-  },
 
   async getOneDriveFiles() {
     if (!AppState.isAuthenticated) {
@@ -337,66 +277,6 @@ const MicrosoftGraphAPI = {
       showNotification('Failed to fetch OneDrive files: ' + message, 'error');
       return [];
     }
-  },
-
-  async getFormResponses(formId) {
-    if (!AppState.isAuthenticated) {
-      return [];
-    }
-
-    if (formId === 'form_1') {
-      return [
-        {
-          id: 'response_1',
-          submittedDateTime: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-          submitter: 'john.doe@email.com',
-          responses: {
-            'How satisfied are you with our community services?': 'Very Satisfied',
-            'What improvements would you like to see?': 'More community events',
-            'Would you recommend our services to others?': 'Yes, definitely'
-          }
-        },
-        {
-          id: 'response_2',
-          submittedDateTime: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
-          submitter: 'jane.smith@email.com',
-          responses: {
-            'How satisfied are you with our community services?': 'Satisfied',
-            'What improvements would you like to see?': 'Better parking facilities',
-            'Would you recommend our services to others?': 'Yes'
-          }
-        }
-      ];
-    } else if (formId === 'form_2') {
-      return [
-        {
-          id: 'response_6',
-          submittedDateTime: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
-          submitter: 'alice.martin@email.com',
-          responses: {
-            'Full Name': 'Alice Martin',
-            'Email Address': 'alice.martin@email.com',
-            'Number of Attendees': '2',
-            'Dietary Requirements': 'Vegetarian'
-          }
-        }
-      ];
-    } else if (formId === 'form_3') {
-      return [
-        {
-          id: 'response_9',
-          submittedDateTime: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
-          submitter: 'chris.wilson@email.com',
-          responses: {
-            'Full Name': 'Chris Wilson',
-            'Availability': 'Weekends',
-            'Areas of Interest': 'Community Outreach'
-          }
-        }
-      ];
-    }
-
-    return [];
   }
 };
 

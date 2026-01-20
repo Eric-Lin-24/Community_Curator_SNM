@@ -73,10 +73,6 @@ function renderDashboard() {
   const overdue = pendingMessages.filter(isOverdueMessage);
   const nextMsg = getNextPendingMessage(AppState.scheduledMessages || []);
 
-  const totalFormResponses = (AppState.microsoftForms || []).reduce(
-    (sum, f) => sum + (f.responseCount || 0),
-    0
-  );
 
   const msConnected = !!(AppState.isAuthenticated && AppState.userProfile);
   const gdConnected = !!AppState.googleDriveConnected;
@@ -199,14 +195,6 @@ function renderDashboard() {
           <div class="divider"></div>
 
           <div class="flex justify-between py-2">
-            <span class="text-muted">Forms</span>
-            <span>${(AppState.microsoftForms || []).length}</span>
-          </div>
-          <div class="flex justify-between py-2">
-            <span class="text-muted">Total form responses</span>
-            <span>${totalFormResponses}</span>
-          </div>
-          <div class="flex justify-between py-2">
             <span class="text-muted">Pending scheduled messages</span>
             <span>${pendingMessages.length}</span>
           </div>
@@ -224,11 +212,12 @@ function renderDashboard() {
               </svg>
               Go to Messages
             </button>
-            <button class="btn btn-secondary w-full" onclick="navigateTo('forms')">
+            <button class="btn btn-secondary w-full" onclick="navigateTo('documents')">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
               </svg>
-              Go to Forms
+              Go to Documents
             </button>
           </div>
         </div>
