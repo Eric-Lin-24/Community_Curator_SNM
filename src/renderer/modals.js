@@ -555,18 +555,17 @@ async function downloadFileFromOneDrive(fileId, fileName) {
     console.log('File ID:', fileId);
     console.log('File Name:', fileName);
 
-    const token = await window.electronAPI.getAccessToken();
-    if (!token) {
-      throw new Error('Not authenticated with Microsoft');
+    if (!AppState.isAuthenticated) {
+      throw new Error('Not authenticated with Microsoft. Please sign in.');
     }
 
-    console.log('Access token obtained, fetching file...');
+    console.log('Fetching file content from OneDrive...');
 
-    // Get download URL from Microsoft Graph
-    const response = await fetch(`https://graph.microsoft.com/v1.0/me/drive/items/${fileId}/content`, {
+    // Use MicrosoftGraphAPI.graphFetch for proper authentication handling
+    const response = await MicrosoftGraphAPI.graphFetch(`/me/drive/items/${fileId}/content`, {
       method: 'GET',
       headers: {
-        'Authorization': `Bearer ${token}`
+        'Accept': 'application/octet-stream'
       }
     });
 

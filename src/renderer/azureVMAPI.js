@@ -179,6 +179,56 @@ const AzureVMAPI = {
     return result;
   },
 
+  async deleteMessage(messageId) {
+    if (!AppState.azureVmUrl) {
+      throw new Error('Azure VM URL not configured. Please set it in Settings.');
+    }
+
+    if (!AppState.userId) {
+      throw new Error('User not authenticated. Please sign in.');
+    }
+
+    if (!messageId) {
+      throw new Error('messageId is required to delete a scheduled message');
+    }
+
+    const base = this._baseUrl();
+    const deleteUrl = `${base}/delete-message?message_id=${encodeURIComponent(messageId)}`;
+
+    try {
+      let res = await fetch(deleteUrl, {
+        method: 'DELETE',
+        headers: { 'Accept': 'application/json' }
+      });
+
+      // If server explicitly rejects DELETE (405), attempt POST fallback using form data
+      if (res.status === 405) {
+        console.warn('DELETE not allowed on server; attempting POST fallback');
+        const formData = new FormData();
+        formData.append('message_id', messageId);
+        res = await fetch(`${base}/delete-message`, { method: 'POST', body: formData });
+      }
+
+      if (!res.ok) {
+        let msg = `HTTP ${res.status}: ${res.statusText}`;
+        try {
+          const data = await res.json();
+          msg = data.detail || data.error || data.message || msg;
+        } catch (e) {
+          try { const text = await res.text(); if (text) msg = text; } catch (_) {}
+        }
+        throw new Error(msg);
+      }
+
+      const data = await res.json();
+      console.log('deleteMessage response:', data);
+      return data === true || data === 'true' || (data && data.deleted === true);
+    } catch (err) {
+      console.error('deleteMessage error:', err);
+      throw err;
+    }
+  },
+
   async subscribeUser(chatId, chatName) {
     if (!AppState.azureVmUrl) {
       throw new Error('Azure VM URL not configured. Please set it in Settings.');
