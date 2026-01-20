@@ -6,8 +6,21 @@ const http = require('http');
 const { google } = require('googleapis');
 const fs = require('fs');
 
+// ============================================
+// FIX WINDOWS CACHE PERMISSION ERRORS
+// ============================================
+// Set custom cache path to avoid permission issues
+app.setPath('userData', path.join(app.getPath('appData'), 'community-curator'));
+app.setPath('cache', path.join(app.getPath('userData'), 'Cache'));
+app.setPath('sessionData', path.join(app.getPath('userData'), 'Session'));
+
 // Disable hardware acceleration to fix GPU errors on Windows
 app.disableHardwareAcceleration();
+
+// Additional command line switches to reduce cache errors
+app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
+app.commandLine.appendSwitch('disable-http-cache');
+app.commandLine.appendSwitch('disk-cache-size', '1');
 
 const store = new SimpleStore();
 let authServer = null;
@@ -483,7 +496,11 @@ function createWindow() {
 // ...existing code...
 
 async function handleAuthCode(code) {
-  console.log('\n🔐 [Microsoft Auth] Processing authorization code...');
+  console.log('\n╔════════════════════════════════════════════════════════════╗');
+  console.log('║         MICROSOFT AUTH - PROCESSING AUTH CODE             ║');
+  console.log('╚════════════════════════════════════════════════════════════╝');
+  console.log('🔐 Authorization code received:', code.substring(0, 20) + '...');
+  console.log('⏰ Timestamp:', new Date().toISOString());
 
   try {
     const tokenRequest = {
@@ -492,39 +509,71 @@ async function handleAuthCode(code) {
       redirectUri: REDIRECT_URI
     };
 
-    console.log('   → Exchanging auth code for tokens...');
+    console.log('\n📤 Sending token request to Microsoft...');
+    console.log('   Scopes:', SCOPES);
+    console.log('   Redirect URI:', REDIRECT_URI);
+
     const response = await pca.acquireTokenByCode(tokenRequest);
 
-    console.log('   ✓ Token exchange successful');
-    console.log('   ✓ Account:', response.account.username);
-    console.log('   ✓ Home Account ID:', response.account.homeAccountId);
-    console.log('   ✓ Tokens cached via MSAL');
-    console.log('   ✓ Cache persisted to: msal-cache.json\n');
+    console.log('\n✅ TOKEN EXCHANGE SUCCESSFUL!');
+    console.log('╔════════════════════════════════════════════════════════════╗');
+    console.log('║                   TOKEN DETAILS                            ║');
+    console.log('╠════════════════════════════════════════════════════════════╣');
+    console.log('║ Account:', response.account.username);
+    console.log('║ Home Account ID:', response.account.homeAccountId);
+    console.log('║ Token Type:', response.tokenType);
+    console.log('║ Access Token (first 30 chars):', response.accessToken.substring(0, 30) + '...');
+    console.log('║ Token Expires:', new Date(response.expiresOn).toISOString());
+    console.log('║ Scopes Granted:', response.scopes.join(', '));
+    console.log('╚════════════════════════════════════════════════════════════╝');
 
+    console.log('\n💾 Saving tokens to MSAL cache...');
+    console.log('   Cache location:', path.join(app.getPath('userData'), 'msal-cache.json'));
+    console.log('   ✓ Tokens cached via MSAL persistence plugin');
+
+    console.log('\n📡 Notifying renderer process...');
     // Notify renderer process
     const mainWindow = BrowserWindow.getAllWindows()[0];
     if (mainWindow) {
+      console.log('   ✓ Main window found');
+      console.log('   ✓ Sending "auth-success" event to renderer');
       mainWindow.webContents.send('auth-success');
       mainWindow.focus();
+      console.log('   ✓ Window focused');
+    } else {
+      console.warn('   ⚠ No main window found!');
     }
+
+    console.log('\n🎉 AUTHENTICATION COMPLETE!\n');
   } catch (error) {
-    console.error('\n❌ [Microsoft Auth] Failed:', error.message);
-    console.error('   Error details:', error);
+    console.error('\n╔════════════════════════════════════════════════════════════╗');
+    console.error('║              AUTHENTICATION FAILED                         ║');
+    console.error('╚════════════════════════════════════════════════════════════╝');
+    console.error('❌ Error:', error.message);
+    console.error('❌ Error Code:', error.errorCode);
+    console.error('❌ Full Error:', error);
     BrowserWindow.getAllWindows()[0]?.webContents.send('auth-error', error.message);
   }
 }
 
 // Handle login request from renderer
 ipcMain.handle('msal-login', async () => {
-  console.log('\n🔓 [Microsoft Auth] Starting login flow...');
+  console.log('\n╔════════════════════════════════════════════════════════════╗');
+  console.log('║         MICROSOFT AUTH - LOGIN INITIATED                  ║');
+  console.log('╚════════════════════════════════════════════════════════════╝');
+  console.log('🚀 Login request received from renderer process');
+  console.log('⏰ Timestamp:', new Date().toISOString());
 
   try {
     // Start the local auth server if not already running
     if (!authServer) {
-      console.log('   → Starting local auth server on port 3000...');
+      console.log('\n🌐 Starting local OAuth redirect server...');
+      console.log('   Port: 3000');
+      console.log('   Hostname: localhost');
       authServer = await createAuthServer();
+      console.log('   ✓ Server started successfully');
     } else {
-      console.log('   → Auth server already running');
+      console.log('\n🌐 Auth server already running on port 3000');
     }
 
     const authCodeUrlParams = {
@@ -533,23 +582,37 @@ ipcMain.handle('msal-login', async () => {
       prompt: 'select_account'
     };
 
-    console.log('   → Generating authorization URL...');
+    console.log('\n🔗 Generating Microsoft authorization URL...');
+    console.log('   Scopes:', SCOPES);
+    console.log('   Redirect URI:', REDIRECT_URI);
+    console.log('   Prompt:', authCodeUrlParams.prompt);
+
     const authCodeUrl = await pca.getAuthCodeUrl(authCodeUrlParams);
 
-    console.log('   → Opening browser for user authentication...');
-    console.log('   → Scopes requested:', SCOPES.join(', '));
+    console.log('   ✓ Authorization URL generated');
+    console.log('   URL:', authCodeUrl.substring(0, 100) + '...');
 
+    console.log('\n🌍 Opening user\'s default browser...');
     // Open in the user's default browser instead of Electron window
     const { shell } = require('electron');
     await shell.openExternal(authCodeUrl);
 
-    console.log('   ✓ Browser opened - waiting for user to complete sign-in...\n');
+    console.log('   ✓ Browser opened successfully');
+    console.log('\n⏳ Waiting for user to complete sign-in...');
+    console.log('   (User will be redirected to http://localhost:3000 after login)');
+    console.log('   (handleAuthCode will be called when redirect is received)\n');
+
     return { success: true };
   } catch (error) {
-    console.error('\n❌ [Microsoft Auth] Login failed:', error.message);
+    console.error('\n╔════════════════════════════════════════════════════════════╗');
+    console.error('║              LOGIN INITIATION FAILED                       ║');
+    console.error('╚════════════════════════════════════════════════════════════╝');
+    console.error('❌ Error:', error.message);
+    console.error('❌ Full Error:', error);
 
     // Clean up server on error
     if (authServer) {
+      console.log('🧹 Cleaning up auth server...');
       authServer.close();
       authServer = null;
     }
@@ -560,22 +623,36 @@ ipcMain.handle('msal-login', async () => {
 
 // Get stored access token (with silent refresh if expired)
 ipcMain.handle('get-access-token', async () => {
-  console.log('\n🔍 [Microsoft Auth] Checking for cached tokens...');
+  console.log('\n╔════════════════════════════════════════════════════════════╗');
+  console.log('║      GET ACCESS TOKEN - Request from Renderer              ║');
+  console.log('╚════════════════════════════════════════════════════════════╝');
+  console.log('📞 Renderer requested access token');
+  console.log('⏰ Timestamp:', new Date().toISOString());
 
   try {
     // ✅ Query MSAL's cache for accounts instead of SimpleStore
     const cache = pca.getTokenCache();
+    console.log('\n🔍 Checking MSAL token cache...');
+    console.log('   Cache location:', path.join(app.getPath('userData'), 'msal-cache.json'));
+
     const accounts = await cache.getAllAccounts();
 
     if (!accounts || accounts.length === 0) {
-      console.log('   ℹ No cached Microsoft accounts found\n');
+      console.log('   ℹ️  NO CACHED ACCOUNTS FOUND');
+      console.log('   → User needs to sign in first');
+      console.log('   → Returning null to renderer\n');
       return null;
     }
 
     // Use the first account (or you could pick based on username/homeAccountId)
     const account = accounts[0];
-    console.log('   ✓ Found cached account:', account.username);
-    console.log('   → Attempting silent token acquisition...');
+    console.log('\n✅ Found cached account:');
+    console.log('   Username:', account.username);
+    console.log('   Home Account ID:', account.homeAccountId);
+    console.log('   Environment:', account.environment);
+
+    console.log('\n🔄 Attempting silent token acquisition...');
+    console.log('   (Will use refresh token if access token expired)');
 
     // Try silent token acquisition with the cached account
     const response = await pca.acquireTokenSilent({
@@ -583,12 +660,26 @@ ipcMain.handle('get-access-token', async () => {
       scopes: SCOPES
     });
 
-    console.log('   ✓ Silent token acquisition successful');
-    console.log('   ✓ Access token retrieved (valid for ~1 hour)\n');
+    console.log('\n✅ SILENT TOKEN ACQUISITION SUCCESSFUL!');
+    console.log('╔════════════════════════════════════════════════════════════╗');
+    console.log('║                   TOKEN RETRIEVED                          ║');
+    console.log('╠════════════════════════════════════════════════════════════╣');
+    console.log('║ Access Token (first 30 chars):', response.accessToken.substring(0, 30) + '...');
+    console.log('║ Token Type:', response.tokenType);
+    console.log('║ Expires On:', new Date(response.expiresOn).toISOString());
+    console.log('║ Scopes:', response.scopes.join(', '));
+    console.log('╚════════════════════════════════════════════════════════════╝');
+    console.log('\n📤 Returning access token to renderer process\n');
+
     return response.accessToken;
   } catch (error) {
-    console.error('   ✗ Silent token acquisition failed:', error.message);
-    console.log('   ℹ User will need to sign in again\n');
+    console.error('\n╔════════════════════════════════════════════════════════════╗');
+    console.error('║         SILENT TOKEN ACQUISITION FAILED                    ║');
+    console.error('╚════════════════════════════════════════════════════════════╝');
+    console.error('❌ Error:', error.message);
+    console.error('❌ Error Code:', error.errorCode);
+    console.error('   → User will need to sign in again');
+    console.error('   → Returning null to renderer\n');
     // If silent fails, return null to trigger interactive login
     return null;
   }

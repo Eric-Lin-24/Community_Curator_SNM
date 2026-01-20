@@ -19,7 +19,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-run_telegram = False
+run_telegram = True
 
 
 def run_api_server():

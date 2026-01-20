@@ -8,6 +8,7 @@ class ScheduledMessage(Base):
     __tablename__ = "scheduled_messages"
 
     id = Column(String, primary_key=True)
+    from_sender = Column(String, nullable=False)
     target_user_id = Column(JSON, nullable=False)  # Store list as JSON for SQLite compatibility
     message = Column(String, nullable=False)
     scheduled_timestamp = Column(DateTime, nullable=False)
