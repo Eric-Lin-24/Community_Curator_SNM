@@ -20,10 +20,6 @@ const viewMeta = {
     title: 'Compose Message',
     subtitle: 'Draft a new update for your community.'
   },
-  forms: {
-    title: 'Forms',
-    subtitle: 'View surveys and collect feedback.'
-  },
   settings: {
     title: 'Settings',
     subtitle: 'Configure platform connections and preferences.'
@@ -109,9 +105,6 @@ function renderApp() {
         if (typeof renderScheduling === 'function') renderScheduling();
       }
       break;
-    case 'forms':
-      if (typeof renderForms === 'function') renderForms();
-      break;
     case 'settings':
       if (typeof renderSettings === 'function') renderSettings();
       break;
@@ -127,9 +120,6 @@ function refreshCurrentView() {
   switch (AppState.currentView) {
     case 'documents':
       if (typeof refreshCloudDocs === 'function') refreshCloudDocs();
-      break;
-    case 'forms':
-      if (typeof refreshForms === 'function') refreshForms();
       break;
     case 'scheduling':
       AzureVMAPI.refreshSubscribedChats();
