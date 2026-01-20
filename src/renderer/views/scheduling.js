@@ -188,12 +188,18 @@ async function quickScheduleMessage() {
   }
 }
 
-function deleteMessage(messageId) {
+async function deleteMessage(messageId) {
   const index = AppState.scheduledMessages.findIndex(m => m.id === messageId);
   if (index > -1) {
-    AppState.scheduledMessages.splice(index, 1);
-    showNotification('Message deleted', 'success');
-    renderScheduling();
+    try {
+      await AzureVMAPI.deleteMessage(messageId);
+      AppState.scheduledMessages.splice(index, 1);
+      showNotification('Message deleted', 'success');
+      renderScheduling();
+    } catch (error) {
+      console.error('Error deleting message:', error);
+      showNotification('Failed to delete message: ' + error.message, 'error');
+    }
   }
 }
 
