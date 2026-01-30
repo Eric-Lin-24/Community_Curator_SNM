@@ -28,6 +28,9 @@ const AppState = {
   subscribedChats: [],
   loadingSubscribedChats: false,
 
+  // File selection mode (for scheduler -> documents flow)
+  fileSelectionMode: false,
+  selectedCloudFilesForScheduler: [],
   // ✅ Drafts (frontend-only, persisted in localStorage per user)
   messageDrafts: [],
   schedulingActiveTab: 'queue', // 'queue' | 'drafts'

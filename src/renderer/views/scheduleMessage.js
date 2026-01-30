@@ -3,9 +3,8 @@
 // Full message composer with file attachments
 // ============================================
 
-// Store selected files (local + cloud)
+// Store selected local files (cloud files are in AppState.selectedCloudFilesForScheduler)
 let selectedLocalFiles = [];
-let selectedCloudFilesPage = [];
 
 // --------------------------------------------
 // Helpers: safe escaping for inline onclick
@@ -88,7 +87,6 @@ function renderScheduleMessagePage() {
   const content = document.getElementById('content');
   const subscribedChats = AppState.subscribedChats || [];
   selectedLocalFiles = [];
-  selectedCloudFilesPage = [];
 
   content.innerHTML = `
     <div class="animate-slide-up">
@@ -147,48 +145,45 @@ function renderScheduleMessagePage() {
             <div class="form-group">
               <label class="form-label">Attachments</label>
 
-              <!-- File source tabs -->
-              <div class="flex gap-2 mb-4">
-                <button type="button" onclick="switchFileSourcePage('local')" id="tab-local-page" class="btn btn-primary btn-sm flex-1">
-                  📁 Local Files
-                </button>
-                <button type="button" onclick="switchFileSourcePage('cloud')" id="tab-cloud-page" class="btn btn-secondary btn-sm flex-1">
-                  ☁️ Cloud Storage
-                </button>
-              </div>
-
-              <!-- Local file upload -->
-              <div
-                id="file-drop-zone"
-                class="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all"
-                style="border-color: var(--border-default); background: var(--bg-tertiary);"
-                onclick="document.getElementById('file-input').click()"
-              >
-                <input type="file" id="file-input" multiple style="display: none;" onchange="handleLocalFileSelect(event)">
-                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin: 0 auto 16px; display: block; color: var(--text-muted);">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                  <polyline points="17 8 12 3 7 8"/>
-                  <line x1="12" y1="3" x2="12" y2="15"/>
-                </svg>
-                <p class="text-sm" style="color: var(--text-primary);">Drop files here or click to browse</p>
-                <p class="text-xs text-muted mt-2">Supports images, documents, and other files</p>
-              </div>
-
-              <!-- Cloud storage file picker (hidden by default) -->
-              <div id="cloud-file-section-page" class="hidden border rounded-lg p-4 max-h-60 overflow-y-auto" style="border-color: var(--border-default); background: var(--bg-tertiary);">
-                <div class="flex items-center justify-between mb-3">
-                  <p class="text-sm font-medium">Select from Cloud Storage</p>
-                  <button type="button" onclick="refreshCloudFilesForPickerPage()" class="btn btn-ghost btn-sm">
-                    🔄 Refresh
-                  </button>
+              <!-- Two attachment options side by side -->
+              <div class="grid grid-cols-2 gap-4 mb-4">
+                <!-- Local file upload -->
+                <div
+                  id="file-drop-zone"
+                  class="border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all hover:border-primary"
+                  style="border-color: var(--border-default); background: var(--bg-tertiary);"
+                  onclick="document.getElementById('file-input').click()"
+                >
+                  <input type="file" id="file-input" multiple style="display: none;" onchange="handleLocalFileSelect(event)">
+                  <div style="width: 48px; height: 48px; margin: 0 auto 12px; border-radius: 12px; background: var(--bg-secondary); display: flex; align-items: center; justify-content: center;">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--text-muted);">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                      <polyline points="17 8 12 3 7 8"/>
+                      <line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
+                  </div>
+                  <p class="text-sm font-medium" style="color: var(--text-primary);">Local Files</p>
+                  <p class="text-xs text-muted mt-1">Drop or click to browse</p>
                 </div>
-                <div id="cloud-file-list-picker-page" class="flex flex-col gap-2">
-                  <p class="text-sm text-muted text-center py-4">Loading files...</p>
+
+                <!-- Cloud storage button -->
+                <div
+                  class="border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all hover:border-primary"
+                  style="border-color: var(--border-default); background: var(--bg-tertiary);"
+                  onclick="goToDocumentsForSelection()"
+                >
+                  <div style="width: 48px; height: 48px; margin: 0 auto 12px; border-radius: 12px; background: var(--bg-secondary); display: flex; align-items: center; justify-content: center;">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--text-muted);">
+                      <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>
+                    </svg>
+                  </div>
+                  <p class="text-sm font-medium" style="color: var(--text-primary);">Cloud Storage</p>
+                  <p class="text-xs text-muted mt-1">Select from Documents</p>
                 </div>
               </div>
 
-              <!-- File List -->
-              <div id="file-list" class="mt-4 flex flex-col gap-2"></div>
+              <!-- Selected Files List -->
+              <div id="file-list" class="flex flex-col gap-2"></div>
             </div>
           </div>
         </div>
@@ -285,6 +280,8 @@ function renderScheduleMessagePage() {
   // Setup drag and drop
   setupDragAndDrop();
 
+  // Render any previously selected files (e.g., when returning from documents selection)
+  renderFileList();
   // ==========================================================
   // ✅ APPLY PREFILL FROM DRAFTS (recipient + message)
   // AppState.scheduleMessagePrefill = { target_user_id, message_content }
@@ -344,107 +341,46 @@ function removeLocalFile(index) {
   renderFileList();
 }
 
-// Switch file source tabs
-function switchFileSourcePage(source) {
-  const dropZone = document.getElementById('file-drop-zone');
-  const cloudSection = document.getElementById('cloud-file-section-page');
-  const tabLocal = document.getElementById('tab-local-page');
-  const tabCloud = document.getElementById('tab-cloud-page');
-
-  if (source === 'local') {
-    if (dropZone) dropZone.classList.remove('hidden');
-    if (cloudSection) cloudSection.classList.add('hidden');
-    if (tabLocal) tabLocal.className = 'btn btn-primary btn-sm flex-1';
-    if (tabCloud) tabCloud.className = 'btn btn-secondary btn-sm flex-1';
-  } else {
-    if (dropZone) dropZone.classList.add('hidden');
-    if (cloudSection) cloudSection.classList.remove('hidden');
-    if (tabLocal) tabLocal.className = 'btn btn-secondary btn-sm flex-1';
-    if (tabCloud) tabCloud.className = 'btn btn-primary btn-sm flex-1';
-    loadCloudFilesForPickerPage();
-  }
+// Navigate to documents page for cloud file selection
+function goToDocumentsForSelection() {
+  // Enable file selection mode
+  AppState.fileSelectionMode = true;
+  AppState.fileSelectionStartedFromDocuments = false; // Coming from scheduler
+  // Navigate to documents
+  navigateTo('documents');
 }
 
-// Load cloud files
-async function loadCloudFilesForPickerPage() {
-  const cloudFileList = document.getElementById('cloud-file-list-picker-page');
-  if (!cloudFileList) return;
-
-  cloudFileList.innerHTML = '<p class="text-sm text-muted text-center py-4">Loading files...</p>';
-
-  try {
-    let files = [];
-    if (AppState.googleDriveConnected) {
-      const gdFiles = await GoogleDriveAPI.getGoogleDriveFiles();
-      files = files.concat(gdFiles || []);
-    }
-    if (AppState.isAuthenticated) {
-      const odFiles = await MicrosoftGraphAPI.getOneDriveFiles();
-      files = files.concat(odFiles || []);
-    }
-
-    if (!files || files.length === 0) {
-      cloudFileList.innerHTML = '<p class="text-sm text-muted text-center py-4">No files found. Connect to OneDrive or Google Drive.</p>';
-      return;
-    }
-
-    cloudFileList.innerHTML = files.map(file => {
-      const isSelected = selectedCloudFilesPage.find(f => f.id === file.id);
-      const safeTitle = _escAttr(file.title || '');
-      const safeSource = _escAttr(file.source || '');
-      const safeMime = _escAttr(file.mimeType || '');
-      return `
-        <div class="flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all ${isSelected ? 'selected' : ''}"
-             style="border: 1px solid var(--border-subtle); ${isSelected ? 'background: var(--accent-primary-soft);' : ''}"
-             onclick="toggleCloudFileSelectionPage('${file.id}', '${safeTitle}', '${safeSource}', '${safeMime}')">
-          <input type="checkbox" id="cloud-file-page-${file.id}" ${isSelected ? 'checked' : ''} class="w-4 h-4" onclick="event.stopPropagation();">
-          <div class="flex-1 min-w-0">
-            <p class="text-sm font-medium truncate">${file.title || 'Untitled'}</p>
-            <p class="text-xs text-muted">${file.source === 'onedrive' ? 'OneDrive' : 'Google Drive'} • ${formatFileSize(file.size || 0)}</p>
-          </div>
-        </div>
-      `;
-    }).join('');
-  } catch (error) {
-    console.error('Error loading cloud files:', error);
-    cloudFileList.innerHTML = '<p class="text-sm text-center py-4" style="color: var(--error);">Failed to load files.</p>';
-  }
-}
-
-// Toggle cloud file selection
-function toggleCloudFileSelectionPage(fileId, fileName, source, mimeType = '') {
-  const existingIndex = selectedCloudFilesPage.findIndex(f => f.id === fileId);
-
-  if (existingIndex >= 0) {
-    selectedCloudFilesPage.splice(existingIndex, 1);
-  } else {
-    selectedCloudFilesPage.push({ id: fileId, name: fileName, source: source, mimeType: mimeType });
-  }
-
-  const checkbox = document.getElementById(`cloud-file-page-${fileId}`);
-  if (checkbox) checkbox.checked = existingIndex < 0;
-
+// Remove a cloud file from selection
+function removeCloudFileFromScheduler(fileId) {
+  AppState.selectedCloudFilesForScheduler = (AppState.selectedCloudFilesForScheduler || []).filter(f => f.id !== fileId);
   renderFileList();
 }
 
-async function refreshCloudFilesForPickerPage() {
-  await loadCloudFilesForPickerPage();
-  showNotification('Cloud files refreshed', 'success');
-}
-
-// Render combined file list
+// Render combined file list (local + cloud from AppState)
 function renderFileList() {
   const fileList = document.getElementById('file-list');
   if (!fileList) return;
 
+  const cloudFiles = AppState.selectedCloudFilesForScheduler || [];
   const allFiles = [];
 
+  // Add local files
   selectedLocalFiles.forEach((file, index) => {
-    allFiles.push({ type: 'local', index, name: file.name, size: file.size, source: 'Local' });
+    allFiles.push({ type: 'local', index, name: file.name, size: file.size, source: 'Local', sourceRaw: 'local' });
   });
 
-  selectedCloudFilesPage.forEach((file, index) => {
-    allFiles.push({ type: 'cloud', index, id: file.id, name: file.name, source: file.source === 'onedrive' ? 'OneDrive' : 'Google Drive' });
+  // Add cloud files from AppState
+  cloudFiles.forEach((file) => {
+    const isOneDrive = file.source === 'onedrive';
+    allFiles.push({
+      type: 'cloud',
+      id: file.id,
+      name: file.name || file.title,
+      size: file.size,
+      source: isOneDrive ? 'OneDrive' : 'Google Drive',
+      sourceRaw: file.source,
+      mimeType: file.mimeType
+    });
   });
 
   if (allFiles.length === 0) {
@@ -452,34 +388,41 @@ function renderFileList() {
     return;
   }
 
-  fileList.innerHTML = allFiles.map(file => `
-    <div class="flex items-center gap-3 p-3 rounded-lg" style="background: var(--bg-tertiary); border: 1px solid var(--border-subtle);">
-      <div class="stat-icon ${file.type === 'cloud' ? 'blue' : 'teal'}" style="width: 36px; height: 36px;">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+  fileList.innerHTML = allFiles.map(file => {
+    const isOneDrive = file.sourceRaw === 'onedrive';
+    const isGoogleDrive = file.sourceRaw === 'googledrive';
+    const sourceColor = isOneDrive ? '#0078d4' : (isGoogleDrive ? '#4285f4' : 'var(--text-muted)');
+
+    return `
+    <div class="flex items-center gap-3 p-3 rounded-xl" style="background: var(--bg-secondary); border: 1px solid var(--border-subtle);">
+      <!-- Icon -->
+      <div style="width: 40px; height: 40px; border-radius: 10px; background: ${file.type === 'cloud' ? (isOneDrive ? 'rgba(0,120,212,0.1)' : 'rgba(66,133,244,0.1)') : 'var(--bg-tertiary)'}; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${file.type === 'cloud' ? sourceColor : 'var(--text-muted)'}" stroke-width="2">
           ${file.type === 'cloud'
             ? '<path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>'
             : '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>'
           }
         </svg>
       </div>
+
+      <!-- File info -->
       <div class="flex-1 min-w-0">
         <p class="text-sm font-medium truncate">${file.name}</p>
-        <p class="text-xs text-muted">${file.source}${file.size ? ' • ' + formatFileSize(file.size) : ''}</p>
+        <div class="flex items-center gap-2 mt-0.5">
+          ${file.type === 'cloud' ? `<span style="width: 6px; height: 6px; border-radius: 50%; background: ${sourceColor};"></span>` : ''}
+          <span class="text-xs" style="color: ${file.type === 'cloud' ? sourceColor : 'var(--text-muted)'};">${file.source}</span>
+          ${file.size ? `<span class="text-xs text-muted">•</span><span class="text-xs text-muted">${formatFileSize(file.size)}</span>` : ''}
+        </div>
       </div>
-      <button class="btn-icon" onclick="${file.type === 'local' ? `removeLocalFile(${file.index})` : `removeCloudFile('${file.id}')`}" style="width: 32px; height: 32px; color: var(--error);">
+
+      <!-- Remove button -->
+      <button class="btn-icon" onclick="${file.type === 'local' ? `removeLocalFile(${file.index})` : `removeCloudFileFromScheduler('${file.id}')`}" style="width: 32px; height: 32px; border-radius: 8px; background: var(--bg-tertiary); color: var(--text-muted);" onmouseover="this.style.color='var(--error)'" onmouseout="this.style.color='var(--text-muted)'">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
         </svg>
       </button>
     </div>
-  `).join('');
-}
-
-function removeCloudFile(fileId) {
-  selectedCloudFilesPage = selectedCloudFilesPage.filter(f => f.id !== fileId);
-  const checkbox = document.getElementById(`cloud-file-page-${fileId}`);
-  if (checkbox) checkbox.checked = false;
-  renderFileList();
+  `}).join('');
 }
 
 // Drag and drop
@@ -555,14 +498,16 @@ async function submitScheduledMessage() {
   try {
     showNotification('Preparing message...', 'info');
 
+    const cloudFilesToSend = AppState.selectedCloudFilesForScheduler || [];
+
     console.log('=== FILE PREP (SCHEDULE PAGE) ===');
     console.log('Local files:', selectedLocalFiles.length, selectedLocalFiles.map(f => f.name));
-    console.log('Cloud selections:', selectedCloudFilesPage.length, selectedCloudFilesPage);
+    console.log('Cloud selections:', cloudFilesToSend.length, cloudFilesToSend);
 
     const downloadedCloudFiles = [];
-    if (selectedCloudFilesPage.length > 0) {
-      showNotification(`Downloading ${selectedCloudFilesPage.length} cloud file(s)...`, 'info');
-      for (const cloudFile of selectedCloudFilesPage) {
+    if (cloudFilesToSend.length > 0) {
+      showNotification(`Downloading ${cloudFilesToSend.length} cloud file(s)...`, 'info');
+      for (const cloudFile of cloudFilesToSend) {
         const source = normalizeSource(cloudFile.source);
 
         console.log('--- Cloud file ---');
@@ -688,7 +633,7 @@ function clearForm() {
   if (recipientSelect) recipientSelect.value = '';
   if (contentTextarea) contentTextarea.value = '';
   selectedLocalFiles = [];
-  selectedCloudFilesPage = [];
+  AppState.selectedCloudFilesForScheduler = [];
   renderFileList();
   updateCharCount();
   showNotification('Form cleared', 'info');
@@ -700,12 +645,9 @@ if (typeof window !== 'undefined') {
   window.updateCharCount = updateCharCount;
   window.handleLocalFileSelect = handleLocalFileSelect;
   window.removeLocalFile = removeLocalFile;
-  window.switchFileSourcePage = switchFileSourcePage;
-  window.loadCloudFilesForPickerPage = loadCloudFilesForPickerPage;
-  window.toggleCloudFileSelectionPage = toggleCloudFileSelectionPage;
-  window.refreshCloudFilesForPickerPage = refreshCloudFilesForPickerPage;
+  window.goToDocumentsForSelection = goToDocumentsForSelection;
+  window.removeCloudFileFromScheduler = removeCloudFileFromScheduler;
   window.renderFileList = renderFileList;
-  window.removeCloudFile = removeCloudFile;
   window.setQuickSchedule = setQuickSchedule;
   window.submitScheduledMessage = submitScheduledMessage;
   window.saveDraft = saveDraft;
