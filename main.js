@@ -1074,14 +1074,37 @@ ipcMain.handle('download-onedrive-file', async (event, { fileId, fileName }) => 
     console.log('✓ Access token acquired for download');
 
     // Download file content from OneDrive
+    // The /content endpoint returns a 302 redirect to a pre-authenticated URL
     const url = `https://graph.microsoft.com/v1.0/me/drive/items/${fileId}/content`;
     console.log('Fetching from:', url);
 
-    const downloadResponse = await fetch(url, {
+    // First request with redirect: 'manual' to get the redirect URL
+    const redirectResponse = await fetch(url, {
+      method: 'GET',
       headers: {
         'Authorization': `Bearer ${accessToken}`
-      }
+      },
+      redirect: 'manual'
     });
+
+    let downloadUrl = url;
+    let downloadResponse;
+
+    // Check if we got a redirect (302)
+    if (redirectResponse.status === 302 || redirectResponse.status === 301) {
+      downloadUrl = redirectResponse.headers.get('location');
+      console.log('Got redirect to:', downloadUrl);
+
+      // Follow the redirect WITHOUT the Authorization header (pre-authenticated URL)
+      downloadResponse = await fetch(downloadUrl);
+    } else if (redirectResponse.ok) {
+      // Some files might not redirect, use the response directly
+      downloadResponse = redirectResponse;
+    } else {
+      const errorText = await redirectResponse.text();
+      console.error('Initial request failed:', redirectResponse.status, errorText);
+      throw new Error(`Download failed: ${redirectResponse.status} ${redirectResponse.statusText}`);
+    }
 
     if (!downloadResponse.ok) {
       const errorText = await downloadResponse.text();
