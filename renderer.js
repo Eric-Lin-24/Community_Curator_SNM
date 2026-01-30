@@ -262,13 +262,114 @@ function renderLoginScreen() {
       <div class="login-container">
         <div class="login-header">
           <div class="logo-container">
-            <svg class="logo-icon" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M12 2L2 7v10c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-10-5zm0 2.18l8 3.6v7.72c0 4.7-3.07 9.09-7.5 10.5-.28-.08-.56-.17-.83-.27C7.67 24.15 4 19.77 4 14.5V7.78l8-3.6z"/>
-              <circle cx="12" cy="12" r="3" fill="currentColor"/>
+            <svg class="logo-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="C icon with document stack">
+              <defs>
+                <!-- Background - pure dark blue, no green -->
+                <radialGradient id="bgGrad" cx="35%" cy="30%" r="85%">
+                  <stop offset="0%" stop-color="#1e3a5f"/>
+                  <stop offset="60%" stop-color="#142942"/>
+                  <stop offset="100%" stop-color="#0a1929"/>
+                </radialGradient>
+                <!-- Main C gradient - removed green tints -->
+                <linearGradient id="cGrad" x1="220" y1="760" x2="820" y2="260" gradientUnits="userSpaceOnUse">
+                  <stop offset="0" stop-color="#3d9ff5"/>
+                  <stop offset="0.55" stop-color="#5eb8ff"/>
+                  <stop offset="1" stop-color="#7fcbff"/>
+                </linearGradient>
+                <!-- Inner/secondary C gradient -->
+                <linearGradient id="cGrad2" x1="260" y1="760" x2="780" y2="300" gradientUnits="userSpaceOnUse">
+                  <stop offset="0" stop-color="#3388dd"/>
+                  <stop offset="0.6" stop-color="#4ea9f5"/>
+                  <stop offset="1" stop-color="#6bbfff"/>
+                </linearGradient>
+                <!-- Subtle shadow -->
+                <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+                  <feDropShadow dx="0" dy="10" stdDeviation="18" flood-color="#000" flood-opacity="0.35"/>
+                </filter>
+                <!-- Document shadow -->
+                <filter id="docShadow" x="-30%" y="-30%" width="160%" height="160%">
+                  <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#000" flood-opacity="0.2"/>
+                </filter>
+                <!-- Translucent blue document fill -->
+                <linearGradient id="docFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#e6f2ff" stop-opacity="0.7"/>
+                  <stop offset="1" stop-color="#cce5ff" stop-opacity="0.6"/>
+                </linearGradient>
+              </defs>
+              <!-- Rounded square background -->
+              <rect x="64" y="64" width="896" height="896" rx="180" fill="url(#bgGrad)"/>
+              <!-- Optional subtle inner border -->
+              <rect x="92" y="92" width="840" height="840" rx="165" fill="none" stroke="#2B5A9A" stroke-opacity="0.22" stroke-width="3"/>
+              <!-- Big "C" made from stroked arcs (modern, no glow) -->
+              <g filter="url(#softShadow)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                <!-- Outer C -->
+                <path
+                  d="M 760 300
+                     A 310 310 0 1 0 760 724"
+                  stroke="url(#cGrad)"
+                  stroke-width="120"/>
+                <!-- Inner accent C -->
+                <path
+                  d="M 720 340
+                     A 270 270 0 1 0 720 684"
+                  stroke="url(#cGrad2)"
+                  stroke-width="74"
+                  stroke-opacity="0.92"/>
+                <!-- Thin dark separation stroke (gives that layered feel) -->
+                <path
+                  d="M 690 365
+                     A 245 245 0 1 0 690 659"
+                  stroke="#061835"
+                  stroke-width="18"
+                  stroke-opacity="0.55"/>
+              </g>
+              <!-- Document stack - centered inside the C -->
+              <g filter="url(#docShadow)">
+                <!-- back sheet -->
+                <rect x="492" y="402" width="180" height="220" rx="20" fill="#5595d9" fill-opacity="0.35"/>
+                <!-- middle sheet -->
+                <rect x="472" y="417" width="180" height="220" rx="20" fill="#6ba5e5" fill-opacity="0.45"/>
+                <!-- front sheet -->
+                <path
+                  d="M 452 434
+                     H 600
+                     Q 630 434 630 464
+                     V 622
+                     Q 630 652 600 652
+                     H 472
+                     Q 452 652 452 632
+                     V 454
+                     Q 452 434 472 434
+                     Z"
+                  fill="url(#docFill)"/>
+                <!-- folded corner -->
+                <path
+                  d="M 570 434
+                     H 600
+                     Q 630 434 630 464
+                     V 494
+                     H 600
+                     Q 570 494 570 464
+                     Z"
+                  fill="#b8d9f7" fill-opacity="0.5"/>
+                <!-- small outline for crispness -->
+                <path
+                  d="M 452 434
+                     H 600
+                     Q 630 434 630 464
+                     V 622
+                     Q 630 652 600 652
+                     H 472
+                     Q 452 652 452 632
+                     V 454
+                     Q 452 434 472 434
+                     Z"
+                  fill="none" stroke="#4a8acc" stroke-opacity="0.4" stroke-width="2"/>
+              </g>
             </svg>
           </div>
           <h1 class="login-title">Community Curator</h1>
-          <p class="login-subtitle">SNM Platform</p>
+          <p class="login-subtitle">Social Network Manager</p>
         </div>
 
         <div class="auth-tabs">
