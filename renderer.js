@@ -402,6 +402,9 @@ function showAuthTab(tab) {
 /**
  * Handle sign in form submission
  */
+/**
+ * Handle sign in form submission
+ */
 async function handleSignIn(event) {
   event.preventDefault();
 
@@ -420,7 +423,7 @@ async function handleSignIn(event) {
 
   // Show loading state
   button.disabled = true;
-  button.innerHTML = '<span>Signing in...</span>';
+  button.innerHTML = '<span>Signing in.</span>';
   errorDiv.classList.add('hidden');
 
   try {
@@ -466,7 +469,9 @@ async function handleSignIn(event) {
     // ============================================
     console.log('\n🔍 Checking for saved integrations for user:', AppState.userId);
 
-    // Check for Microsoft credentials
+    // ----------------------------
+    // Microsoft (OneDrive)
+    // ----------------------------
     const userMsTokenKey = `ms_token_${AppState.userId}`;
     const userMsProfileKey = `ms_profile_${AppState.userId}`;
     const savedMsToken = localStorage.getItem(userMsTokenKey);
@@ -483,18 +488,39 @@ async function handleSignIn(event) {
       console.log('ℹ️  No saved Microsoft credentials for this user');
     }
 
-    // Check for Google credentials
-    const userGoogleEmailKey = `google_email_${AppState.userId}`;
-    const savedGoogleEmail = localStorage.getItem(userGoogleEmailKey);
-
-    if (savedGoogleEmail) {
-      console.log('✅ Found saved Google Drive connection for this user');
-      AppState.googleDriveConnected = true;
-      AppState.googleDriveEmail = savedGoogleEmail;
-      console.log('   → Google account:', savedGoogleEmail);
-      console.log('   → Google Drive credentials restored');
+    // ----------------------------
+    // Google Drive
+    // ----------------------------
+    // Instead of only restoring the email string, try a real auth check
+    // (this will also enforce mismatch protection).
+    if (typeof window.GoogleDriveAPI !== 'undefined' && typeof GoogleDriveAPI.checkAuthentication === 'function') {
+      try {
+        const ok = await GoogleDriveAPI.checkAuthentication();
+        if (ok) {
+          console.log('✅ Google Drive session active for this user');
+          console.log('   → Google account:', AppState.googleDriveEmail);
+        } else {
+          console.log('ℹ️  No active Google Drive session for this user');
+        }
+      } catch (e) {
+        console.warn('ℹ️  GoogleDriveAPI.checkAuthentication() failed:', e?.message || e);
+        AppState.googleDriveConnected = false;
+        AppState.googleDriveEmail = '';
+      }
     } else {
-      console.log('ℹ️  No saved Google Drive credentials for this user');
+      // Fallback to your previous behavior if GoogleDriveAPI isn't loaded for some reason
+      const userGoogleEmailKey = `google_email_${AppState.userId}`;
+      const savedGoogleEmail = localStorage.getItem(userGoogleEmailKey);
+
+      if (savedGoogleEmail) {
+        console.log('✅ Found saved Google Drive connection for this user');
+        AppState.googleDriveConnected = true;
+        AppState.googleDriveEmail = savedGoogleEmail;
+        console.log('   → Google account:', savedGoogleEmail);
+        console.log('   → Google Drive credentials restored (email-only fallback)');
+      } else {
+        console.log('ℹ️  No saved Google Drive credentials for this user');
+      }
     }
 
     // Initialize app
@@ -518,6 +544,7 @@ async function handleSignIn(event) {
     button.innerHTML = '<span>Sign In</span>';
   }
 }
+
 
 /**
  * Handle sign up form submission
@@ -615,6 +642,14 @@ async function handleSignUp(event) {
  * Handle logout - Clear user session and return to login screen
  */
 function handleLogout() {
+  // Clear main-process user context + any in-memory Google session
+  if (window.electronAPI?.clearActiveUser) {
+    window.electronAPI.clearActiveUser();
+  }
+  if (window.electronAPI?.googleLogout) {
+    window.electronAPI.googleLogout();
+  }
+
   // Clear user data from AppState
   AppState.userId = null;
   AppState.username = null;
