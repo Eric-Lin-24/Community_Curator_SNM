@@ -551,7 +551,7 @@ async function refreshCloudFilesForPicker() {
  */
 async function downloadFileFromOneDrive(fileId, fileName) {
   try {
-    console.log('=== DOWNLOADING FROM ONEDRIVE ===');
+    console.log('=== DOWNLOADING FROM ONEDRIVE (FIXED) ===');
     console.log('File ID:', fileId);
     console.log('File Name:', fileName);
 
@@ -559,27 +559,30 @@ async function downloadFileFromOneDrive(fileId, fileName) {
       throw new Error('Not authenticated with Microsoft. Please sign in.');
     }
 
-    console.log('Fetching file content from OneDrive...');
+    // IMPORTANT: get a token (main process is the source of truth)
+    const token = await window.electronAPI.getAccessToken();
+    if (!token) {
+      throw new Error('No Microsoft access token available. Please reconnect Microsoft.');
+    }
 
-    // Use MicrosoftGraphAPI.graphFetch for proper authentication handling
-    const response = await MicrosoftGraphAPI.graphFetch(`/me/drive/items/${fileId}/content`, {
+    // Download content as a binary stream
+    const url = `https://graph.microsoft.com/v1.0/me/drive/items/${fileId}/content`;
+    const res = await fetch(url, {
       method: 'GET',
       headers: {
-        'Accept': 'application/octet-stream'
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/octet-stream'
       }
     });
 
-    if (!response.ok) {
-      throw new Error(`Failed to download file: ${response.status} ${response.statusText}`);
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`Failed to download file: ${res.status} ${res.statusText}${text ? ` - ${text}` : ''}`);
     }
 
-    console.log('File fetched from OneDrive, converting to blob...');
-
-    // Get file blob
-    const blob = await response.blob();
+    const blob = await res.blob();
     console.log('Blob created:', blob.size, 'bytes, type:', blob.type);
 
-    // Convert blob to File object
     const file = new File([blob], fileName, { type: blob.type || 'application/octet-stream' });
 
     console.log('✓ File object created:', file.name, file.size, 'bytes', file.type);
@@ -589,6 +592,7 @@ async function downloadFileFromOneDrive(fileId, fileName) {
     throw error;
   }
 }
+
 
 /**
  * Download file from Google Drive
