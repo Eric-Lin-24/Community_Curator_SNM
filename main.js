@@ -1047,6 +1047,66 @@ ipcMain.handle('msal-logout', async () => {
   }
 });
 
+// Download OneDrive file
+ipcMain.handle('download-onedrive-file', async (event, { fileId, fileName }) => {
+  console.log('\n╔════════════════════════════════════════════════════════════╗');
+  console.log('║           ONEDRIVE FILE DOWNLOAD REQUEST                   ║');
+  console.log('╚════════════════════════════════════════════════════════════╝');
+  console.log('File ID:', fileId);
+  console.log('File Name:', fileName);
+
+  try {
+    // Get access token via MSAL
+    const cache = pca.getTokenCache();
+    const accounts = await cache.getAllAccounts();
+
+    if (!accounts || accounts.length === 0) {
+      throw new Error('No Microsoft account signed in. Please sign in first.');
+    }
+
+    const account = accounts[0];
+    const response = await pca.acquireTokenSilent({
+      account: account,
+      scopes: SCOPES
+    });
+
+    const accessToken = response.accessToken;
+    console.log('✓ Access token acquired for download');
+
+    // Download file content from OneDrive
+    const url = `https://graph.microsoft.com/v1.0/me/drive/items/${fileId}/content`;
+    console.log('Fetching from:', url);
+
+    const downloadResponse = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`
+      }
+    });
+
+    if (!downloadResponse.ok) {
+      const errorText = await downloadResponse.text();
+      console.error('Download failed:', downloadResponse.status, errorText);
+      throw new Error(`Download failed: ${downloadResponse.status} ${downloadResponse.statusText}`);
+    }
+
+    // Get content type from response
+    const contentType = downloadResponse.headers.get('content-type') || 'application/octet-stream';
+    console.log('Content-Type:', contentType);
+
+    const buffer = await downloadResponse.arrayBuffer();
+    console.log('✓ File downloaded successfully, size:', buffer.byteLength, 'bytes');
+
+    return {
+      buffer: Array.from(new Uint8Array(buffer)),
+      fileName: fileName,
+      mimeType: contentType
+    };
+  } catch (error) {
+    console.error('❌ OneDrive download error:', error.message);
+    throw error;
+  }
+});
+
 // ============================================
 // GOOGLE OAUTH HANDLERS
 // ============================================
