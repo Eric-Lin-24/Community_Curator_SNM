@@ -56,7 +56,6 @@ async function downloadFileFromOneDrive(fileId, fileName) {
   }
 }
 
-
 async function downloadFileFromGoogleDriveFixed(fileId, fileName, mimeType) {
   console.log('=== GOOGLE DRIVE DOWNLOAD START ===');
   console.log('File ID:', fileId);
@@ -283,6 +282,36 @@ function renderScheduleMessagePage() {
 
   // Render any previously selected files (e.g., when returning from documents selection)
   renderFileList();
+  // ==========================================================
+  // ✅ APPLY PREFILL FROM DRAFTS (recipient + message)
+  // AppState.scheduleMessagePrefill = { target_user_id, message_content }
+  // ==========================================================
+  try {
+    const prefill = AppState.scheduleMessagePrefill;
+    if (prefill && (prefill.target_user_id || prefill.message_content)) {
+      const recipientSelect = document.getElementById('message-recipient');
+      const messageBox = document.getElementById('message-content');
+
+      // Recipient: match by option dataset userId
+      if (recipientSelect && prefill.target_user_id) {
+        const options = Array.from(recipientSelect.options || []);
+        const match = options.find(opt => String(opt.dataset.userId || '') === String(prefill.target_user_id));
+        if (match) recipientSelect.value = match.value;
+      }
+
+      // Message text
+      if (messageBox && typeof prefill.message_content === 'string') {
+        messageBox.value = prefill.message_content;
+      }
+
+      updateCharCount();
+
+      // Clear so it doesn't keep reapplying
+      AppState.scheduleMessagePrefill = null;
+    }
+  } catch (e) {
+    console.warn('Draft prefill failed:', e);
+  }
 }
 
 // Character counter
@@ -547,7 +576,56 @@ async function submitScheduledMessage() {
   }
 }
 
-function saveDraft() { showNotification('Draft saved (feature coming soon)', 'info'); }
+// ✅ Draft saving for "Recurring Message Drafts"
+function _draftStorageKey() {
+  return AppState.userId ? `message_drafts_${AppState.userId}` : 'message_drafts_guest';
+}
+
+function _loadDrafts() {
+  try {
+    const raw = localStorage.getItem(_draftStorageKey());
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function _saveDrafts(drafts) {
+  try {
+    localStorage.setItem(_draftStorageKey(), JSON.stringify(drafts || []));
+  } catch (e) {
+    console.warn('Failed to save drafts:', e);
+  }
+}
+
+function saveDraft() {
+  const recipientSelect = document.getElementById('message-recipient');
+  const recipientValue = recipientSelect ? recipientSelect.value : '';
+  const message = document.getElementById('message-content')?.value || '';
+
+  if (!recipientValue) { showNotification('Please select a recipient', 'warning'); return; }
+  if (!message.trim()) { showNotification('Please enter a message to save', 'warning'); return; }
+
+  const selectedChat = (AppState.subscribedChats || []).find(c => c.id === recipientValue || c.chat_id === recipientValue);
+  const targetUserId = selectedChat?.user_id;
+
+  if (!targetUserId) {
+    showNotification('Could not determine target user for this recipient', 'error');
+    return;
+  }
+
+  const drafts = _loadDrafts();
+  drafts.unshift({
+    id: generateId(),
+    target_user_id: targetUserId,
+    message_content: message,
+    created_at: new Date().toISOString()
+  });
+  _saveDrafts(drafts);
+
+  showNotification('Draft saved', 'success');
+}
 
 function clearForm() {
   const recipientSelect = document.getElementById('message-recipient');

@@ -10,6 +10,83 @@ const AzureVMAPI = {
     return String(AppState.azureVmUrl).replace(/\/$/, '');
   },
 
+  // -----------------------------
+  // Normalization helpers
+  // -----------------------------
+  _normTarget(t) {
+    if (Array.isArray(t)) return t.map(String).join(',');
+    if (t == null) return '';
+    return String(t);
+  },
+
+  _normText(s) {
+    return String(s || '').trim();
+  },
+
+  _normTime(ts) {
+    // Try hard to normalize different timestamp formats into the same ISO string
+    if (!ts) return '';
+    try {
+      const d = new Date(ts);
+      if (!isNaN(d.getTime())) return d.toISOString();
+    } catch (_) {}
+    // If parsing failed, fallback to string
+    return String(ts);
+  },
+
+  _sameTime(a, b) {
+    // Compare normalized ISO time; if parsing fails, compare raw normalized strings
+    const na = this._normTime(a);
+    const nb = this._normTime(b);
+    if (na && nb) return na === nb;
+
+    // fallback
+    return String(a || '') === String(b || '');
+  },
+
+  _sameTarget(a, b) {
+    return this._normTarget(a) === this._normTarget(b);
+  },
+
+  _isSent(m) {
+    return m?.status === 'sent' || m?.is_sent === true;
+  },
+
+  _mergeFiles(keep, incoming) {
+    // Merge file_paths/file_urls (don’t lose attachments)
+    const keepPaths = keep.file_paths || [];
+    const keepUrls = keep.file_urls || [];
+    const incPaths = incoming.file_paths || [];
+    const incUrls = incoming.file_urls || [];
+
+    if (incPaths.length > 0 && keepPaths.length === 0) keep.file_paths = incPaths;
+    if (incUrls.length > 0 && keepUrls.length === 0) keep.file_urls = incUrls;
+  },
+
+  _chooseBetter(a, b) {
+    // Keep sent over pending; merge attachments before choosing
+    this._mergeFiles(a, b);
+    this._mergeFiles(b, a);
+
+    const aSent = this._isSent(a);
+    const bSent = this._isSent(b);
+
+    if (bSent && !aSent) return b;
+    if (aSent && !bSent) return a;
+
+    // If equal status, keep the one with newer sent_at/created_at if possible
+    const aTime = Date.parse(a?.sent_at || a?.created_at || a?.scheduled_time || a?.scheduled_timestamp || 0) || 0;
+    const bTime = Date.parse(b?.sent_at || b?.created_at || b?.scheduled_time || b?.scheduled_timestamp || 0) || 0;
+    return bTime >= aTime ? b : a;
+  },
+
+  _contentKey(msg) {
+    const content = this._normText(msg?.message_content || msg?.message || msg?.content || '');
+    const when = this._normTime(msg?.scheduled_time || msg?.scheduled_timestamp || msg?.scheduledTs || '');
+    const target = this._normTarget(msg?.target_user_id);
+    return `${content}|${when}|${target}`;
+  },
+
   async fetchSubscribedChats() {
     if (!AppState.azureVmUrl) {
       throw new Error('Azure VM URL not configured. Please set it in Settings.');
@@ -26,7 +103,7 @@ const AzureVMAPI = {
           'Content-Type': 'application/json',
           'Accept': 'application/json'
         },
-        signal: AbortSignal.timeout(10000) // 10 second timeout
+        signal: AbortSignal.timeout(10000)
       });
 
       if (!response.ok) {
@@ -36,35 +113,30 @@ const AzureVMAPI = {
       const data = await response.json();
       console.log('Raw API response:', data);
 
-      // Handle array response
       let rawChats = [];
-      if (Array.isArray(data)) {
-        rawChats = data;
-      } else if (data && Array.isArray(data.chats)) {
-        rawChats = data.chats;
-      } else if (data && Array.isArray(data.users)) {
-        rawChats = data.users;
-      } else {
+      if (Array.isArray(data)) rawChats = data;
+      else if (data && Array.isArray(data.chats)) rawChats = data.chats;
+      else if (data && Array.isArray(data.users)) rawChats = data.users;
+      else {
         console.error('Unexpected response format:', data);
         throw new Error('Invalid response format from Azure VM');
       }
 
-      // Map your schema (user_id, chat_id, chat_name, created_at) to internal format
       const formattedChats = rawChats.map(chat => {
-        console.log('Raw chat from server:', chat); // Debug: see what backend actually returns
+        console.log('Raw chat from server:', chat);
         return {
-          id: chat.chat_id || chat.id,           // Use chat_id for display/selection
-          chat_id: chat.chat_id,                 // Keep original chat_id
-          name: chat.chat_name || chat.name || chat.chat_id || 'Unknown Chat',  // Use chat_name
-          platform: chat.platform || 'whatsapp',  // Default to whatsapp if not specified
-          type: chat.type || 'group',             // Default to group if not specified
-          user_id: chat.user_id,                  // user_id for targeting messages - THIS IS THE IMPORTANT ONE
-          from_sender: chat.from_sender || chat.user_id, // Track who subscribed to this chat
-          created_at: chat.created_at             // Keep created_at for reference
+          id: chat.chat_id || chat.id,
+          chat_id: chat.chat_id,
+          name: chat.chat_name || chat.name || chat.chat_id || 'Unknown Chat',
+          platform: chat.platform || 'whatsapp',
+          type: chat.type || 'group',
+          user_id: chat.user_id,
+          from_sender: chat.from_sender || chat.user_id,
+          created_at: chat.created_at
         };
       });
 
-      console.log('Formatted chats with user_id:', formattedChats); // Debug: verify user_id is present
+      console.log('Formatted chats with user_id:', formattedChats);
       AppState.subscribedChats = formattedChats;
 
       if (AppState.lastSync) {
@@ -106,22 +178,14 @@ const AzureVMAPI = {
     console.log('=== PREPARING TO SEND TO AZURE VM ===');
 
     let targetUserIdStr = '';
-    if (Array.isArray(targetUserId)) {
-      targetUserIdStr = targetUserId.join(',');
-    } else if (typeof targetUserId === 'string') {
-      targetUserIdStr = targetUserId;
-    } else if (targetUserId != null) {
-      targetUserIdStr = String(targetUserId);
-    }
+    if (Array.isArray(targetUserId)) targetUserIdStr = targetUserId.join(',');
+    else if (typeof targetUserId === 'string') targetUserIdStr = targetUserId;
+    else if (targetUserId != null) targetUserIdStr = String(targetUserId);
 
     let scheduledTsStr = '';
-    if (scheduledTimestamp instanceof Date) {
-      scheduledTsStr = scheduledTimestamp.toISOString();
-    } else if (typeof scheduledTimestamp === 'string') {
-      scheduledTsStr = scheduledTimestamp;
-    } else if (scheduledTimestamp != null) {
-      scheduledTsStr = String(scheduledTimestamp);
-    }
+    if (scheduledTimestamp instanceof Date) scheduledTsStr = scheduledTimestamp.toISOString();
+    else if (typeof scheduledTimestamp === 'string') scheduledTsStr = scheduledTimestamp;
+    else if (scheduledTimestamp != null) scheduledTsStr = String(scheduledTimestamp);
 
     console.log('User UUID:', AppState.userId);
     console.log('Username:', AppState.username);
@@ -151,7 +215,6 @@ const AzureVMAPI = {
     }
 
     const endpoint = `${this._baseUrl()}/schedule-message`;
-
     console.log('Sending POST to:', endpoint);
 
     const response = await fetch(endpoint, {
@@ -201,7 +264,6 @@ const AzureVMAPI = {
         headers: { 'Accept': 'application/json' }
       });
 
-      // If server explicitly rejects DELETE (405), attempt POST fallback using form data
       if (res.status === 405) {
         console.warn('DELETE not allowed on server; attempting POST fallback');
         const formData = new FormData();
@@ -324,185 +386,162 @@ const AzureVMAPI = {
 
       console.log(`📊 Fetched ${serverMessages.length} message(s) from server for user ${AppState.userId}`);
 
-      // Create a map of server message IDs for quick lookup
-      const serverMessageIds = new Set(serverMessages.map(m => m.id));
-
       AppState.scheduledMessages = AppState.scheduledMessages || [];
 
-      // First, remove local messages that no longer exist on the server (were deleted)
-      // and update messages that have been sent
-      const messagesToRemove = [];
-      AppState.scheduledMessages.forEach((localMsg, index) => {
-        // Find matching server message by ID or by server_id
-        let serverMsg = serverMessages.find(s => s.id === localMsg.id || s.id === localMsg.server_id);
+      const serverIdSet = new Set(serverMessages.map(m => String(m.id)));
 
-        // If not found by ID, try to match by content (for when server creates new entry for sent messages)
+      // --------------------------------------------
+      // 1) Update/Remove local messages
+      // --------------------------------------------
+      const messagesToRemove = [];
+
+      AppState.scheduledMessages.forEach((localMsg, index) => {
+        const localId = localMsg?.server_id || localMsg?.id;
+        const localIdStr = localId != null ? String(localId) : '';
+
+        // Try ID match first
+        let serverMsg =
+          localIdStr
+            ? serverMessages.find(s => String(s.id) === localIdStr)
+            : null;
+
+        // If no ID match, match by normalized content key
         if (!serverMsg) {
-          serverMsg = serverMessages.find(s =>
-            s.message === localMsg.message_content &&
-            s.scheduled_timestamp === localMsg.scheduled_time &&
-            (s.target_user_id === localMsg.target_user_id ||
-             (Array.isArray(s.target_user_id) && Array.isArray(localMsg.target_user_id) &&
-              s.target_user_id.join(',') === localMsg.target_user_id.join(',')))
-          );
+          const localKey = this._contentKey(localMsg);
+          serverMsg = serverMessages.find(s => this._contentKey(s) === localKey);
         }
 
         if (serverMsg) {
-          // Update status if message was sent
+          // Update status
           if (serverMsg.is_sent === true && localMsg.status !== 'sent') {
-            console.log(`✓ Message ${serverMsg.id} marked as SENT (was pending: ${localMsg.id})`);
+            console.log(`✓ Message ${serverMsg.id} marked as SENT (was pending local: ${localMsg.id})`);
             localMsg.status = 'sent';
             localMsg.sent_at = serverMsg.sent_at || new Date().toISOString();
           }
 
-          // Merge file information from server
-          if (serverMsg.file_paths && serverMsg.file_paths.length > 0) {
-            localMsg.file_paths = serverMsg.file_paths;
-            console.log(`📎 Updated file attachments for message ${serverMsg.id}: ${serverMsg.file_paths.length} file(s)`);
-          }
-          if (serverMsg.file_urls && serverMsg.file_urls.length > 0) {
-            localMsg.file_urls = serverMsg.file_urls;
+          // Merge files from server if present
+          if ((serverMsg.file_paths && serverMsg.file_paths.length > 0) || (serverMsg.file_urls && serverMsg.file_urls.length > 0)) {
+            localMsg.file_paths = serverMsg.file_paths || localMsg.file_paths || [];
+            localMsg.file_urls = serverMsg.file_urls || localMsg.file_urls || [];
           }
 
-          // Make sure the server ID is stored
-          if (!localMsg.server_id && serverMsg.id) {
-            localMsg.server_id = serverMsg.id;
+          // Store server_id and align id to server id
+          localMsg.server_id = localMsg.server_id || serverMsg.id;
+          localMsg.id = serverMsg.id;
+
+          // Normalize these for consistent comparisons
+          localMsg.scheduled_time = this._normTime(localMsg.scheduled_time);
+          localMsg.scheduled_timestamp = this._normTime(localMsg.scheduled_timestamp || localMsg.scheduled_time);
+          localMsg.target_user_id = this._normTarget(localMsg.target_user_id);
+          localMsg.message_content = this._normText(localMsg.message_content);
+
+        } else {
+          // If it had a server_id and that ID is no longer on server → deleted
+          if (localMsg.server_id && !serverIdSet.has(String(localMsg.server_id))) {
+            console.log(`🗑️ Message ${localMsg.id} no longer on server, removing locally`);
+            messagesToRemove.push(index);
           }
-          // Update the main id to match server id for consistency
-          if (localMsg.id !== serverMsg.id) {
-            localMsg.id = serverMsg.id;
-          }
-        } else if (localMsg.server_id && !serverMessageIds.has(localMsg.server_id)) {
-          // Message was deleted from server
-          console.log(`🗑️ Message ${localMsg.id} no longer on server, removing locally`);
-          messagesToRemove.push(index);
         }
       });
 
-      // Remove messages that were deleted on the server (in reverse order to preserve indices)
-      messagesToRemove.reverse().forEach(index => {
-        AppState.scheduledMessages.splice(index, 1);
-      });
+      messagesToRemove.reverse().forEach(i => AppState.scheduledMessages.splice(i, 1));
 
-      // Add new messages from server that we don't have locally
+      // --------------------------------------------
+      // 2) Add server messages we don't have
+      // --------------------------------------------
       let addedCount = 0;
+
       serverMessages.forEach(serverMsg => {
-        // Check by ID first
-        const existsLocally = AppState.scheduledMessages.some(
-          m => m.id === serverMsg.id || m.server_id === serverMsg.id
+        const serverId = String(serverMsg.id);
+
+        const existsById = AppState.scheduledMessages.some(m =>
+          String(m.id) === serverId || String(m.server_id) === serverId
         );
 
-        // Also check by content to avoid duplicates when server creates new entry for sent messages
-        const duplicateByContent = !existsLocally && AppState.scheduledMessages.some(
-          m => m.message_content === serverMsg.message &&
-               m.scheduled_time === serverMsg.scheduled_timestamp &&
-               (m.target_user_id === serverMsg.target_user_id ||
-                (Array.isArray(m.target_user_id) && Array.isArray(serverMsg.target_user_id) &&
-                 m.target_user_id.join(',') === serverMsg.target_user_id.join(',')))
-        );
+        const serverKey = this._contentKey(serverMsg);
+        const existsByKey = !existsById && AppState.scheduledMessages.some(m => this._contentKey(m) === serverKey);
 
-        if (!existsLocally && !duplicateByContent) {
+        if (!existsById && !existsByKey) {
           console.log(`➕ Adding new message from server: ${serverMsg.id}`);
 
-          // Look up human-readable name from subscribed chats using target_user_id
+          // Name lookup (best effort)
           let displayName = null;
-          const targetId = Array.isArray(serverMsg.target_user_id)
-            ? serverMsg.target_user_id[0]
-            : serverMsg.target_user_id;
+          const targetIdRaw = Array.isArray(serverMsg.target_user_id) ? serverMsg.target_user_id[0] : serverMsg.target_user_id;
+          const targetId = targetIdRaw != null ? String(targetIdRaw) : '';
 
           if (targetId && AppState.subscribedChats) {
-            const matchingChat = AppState.subscribedChats.find(chat => chat.user_id === targetId);
-            if (matchingChat) {
-              displayName = matchingChat.name || matchingChat.chat_name;
-              console.log(`✅ Found name for user_id ${targetId}: "${displayName}"`);
-            } else {
-              console.log(`⚠️ No subscribed chat found for user_id: ${targetId}`);
-            }
+            const matchingChat = AppState.subscribedChats.find(chat => String(chat.user_id) === targetId);
+            if (matchingChat) displayName = matchingChat.name || matchingChat.chat_name;
           }
 
           AppState.scheduledMessages.push({
             id: serverMsg.id,
             server_id: serverMsg.id,
-            recipient: displayName || (Array.isArray(serverMsg.target_user_id)
-              ? serverMsg.target_user_id.join(', ')
-              : serverMsg.target_user_id),
-            message_content: serverMsg.message,
-            content: serverMsg.message,
-            scheduled_time: serverMsg.scheduled_timestamp,
-            scheduled_timestamp: serverMsg.scheduled_timestamp,
-            target_user_id: serverMsg.target_user_id,
+            recipient: displayName || this._normTarget(serverMsg.target_user_id),
+            message_content: this._normText(serverMsg.message),
+            content: this._normText(serverMsg.message),
+            scheduled_time: this._normTime(serverMsg.scheduled_timestamp),
+            scheduled_timestamp: this._normTime(serverMsg.scheduled_timestamp),
+            target_user_id: this._normTarget(serverMsg.target_user_id),
             status: serverMsg.is_sent ? 'sent' : 'pending',
             created_at: serverMsg.created_at || new Date().toISOString(),
             sent_at: serverMsg.sent_at,
             from_sender: AppState.userId,
             file_paths: serverMsg.file_paths || [],
+            file_urls: serverMsg.file_urls || [],
             platform: 'whatsapp'
           });
+
           addedCount++;
         }
       });
 
-      const totalChanges = messagesToRemove.length + addedCount;
-      if (totalChanges > 0) {
-        console.log(`✓ Sync complete: ${messagesToRemove.length} removed, ${addedCount} added`);
-      } else {
-        console.log('No messages updated from server sync');
-      }
+      // --------------------------------------------
+      // 3) FINAL DEDUPE PASS (ID-first, then key)
+      // --------------------------------------------
+      const before = AppState.scheduledMessages.length;
 
-      // Clean up any duplicate messages (same content, recipient, and time)
-      const uniqueMessages = [];
-      const seen = new Set();
+      // ID-first
+      const byId = new Map();
+      AppState.scheduledMessages.forEach(m => {
+        const idKey = String(m.server_id || m.id || '');
+        if (!idKey) return;
 
-      AppState.scheduledMessages.forEach(msg => {
-        const key = `${msg.message_content}|${msg.scheduled_time}|${msg.target_user_id}`;
-
-        if (!seen.has(key)) {
-          seen.add(key);
-          uniqueMessages.push(msg);
+        if (!byId.has(idKey)) {
+          byId.set(idKey, m);
         } else {
-          // If duplicate found, merge the information
-          const existingIndex = uniqueMessages.findIndex(m =>
-            m.message_content === msg.message_content &&
-            m.scheduled_time === msg.scheduled_time &&
-            m.target_user_id === msg.target_user_id
-          );
-
-          if (existingIndex !== -1) {
-            const existing = uniqueMessages[existingIndex];
-
-            // Merge file attachments from both entries
-            const existingFiles = existing.file_paths || existing.file_urls || [];
-            const newFiles = msg.file_paths || msg.file_urls || [];
-
-            if (newFiles.length > 0 && existingFiles.length === 0) {
-              existing.file_paths = msg.file_paths;
-              existing.file_urls = msg.file_urls;
-              console.log(`📎 Merged file attachments from duplicate: ${newFiles.length} file(s)`);
-            }
-
-            // Prefer 'sent' status over 'pending'
-            if (msg.status === 'sent' && existing.status !== 'sent') {
-              console.log(`🔄 Updating duplicate to sent status: ${msg.id}`);
-              existing.status = 'sent';
-              existing.sent_at = msg.sent_at;
-              // Also update the ID to match the sent version
-              existing.id = msg.id;
-              existing.server_id = msg.server_id || msg.id;
-            }
-          }
+          const better = this._chooseBetter(byId.get(idKey), m);
+          byId.set(idKey, better);
         }
       });
 
-      const duplicatesRemoved = AppState.scheduledMessages.length - uniqueMessages.length;
-      if (duplicatesRemoved > 0) {
-        console.log(`🧹 Removed ${duplicatesRemoved} duplicate message(s)`);
-        AppState.scheduledMessages = uniqueMessages;
-      }
+      // Key fallback (handles cases where local temp id differs but content same)
+      const byKey = new Map();
+      Array.from(byId.values()).forEach(m => {
+        const k = this._contentKey(m);
+        if (!byKey.has(k)) {
+          byKey.set(k, m);
+        } else {
+          const better = this._chooseBetter(byKey.get(k), m);
+          byKey.set(k, better);
+        }
+      });
 
-      if (totalChanges > 0 || duplicatesRemoved > 0) {
+      AppState.scheduledMessages = Array.from(byKey.values());
+
+      const after = AppState.scheduledMessages.length;
+      const deduped = Math.max(0, before - after);
+
+      const totalChanges = messagesToRemove.length + addedCount + deduped;
+
+      if (deduped > 0) console.log(`🧹 Removed ${deduped} duplicate message(s) (normalized key + ID-first)`);
+      if (totalChanges > 0) {
+        console.log(`✓ Sync complete: ${messagesToRemove.length} removed, ${addedCount} added, ${deduped} deduped`);
         if (AppState.currentView === 'scheduling' && typeof renderScheduling === 'function') {
           renderScheduling();
         }
+      } else {
+        console.log('No messages updated from server sync');
       }
 
       return serverMessages;

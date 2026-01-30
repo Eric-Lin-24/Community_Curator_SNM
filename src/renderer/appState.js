@@ -31,6 +31,12 @@ const AppState = {
   // File selection mode (for scheduler -> documents flow)
   fileSelectionMode: false,
   selectedCloudFilesForScheduler: [],
+  // ✅ Drafts (frontend-only, persisted in localStorage per user)
+  messageDrafts: [],
+  schedulingActiveTab: 'queue', // 'queue' | 'drafts'
+
+  // ✅ Prefill support for scheduleMessage page
+  scheduleMessagePrefill: null, // { target_user_id: string, message_content: string }
 
   // Forms
   microsoftForms: [],
