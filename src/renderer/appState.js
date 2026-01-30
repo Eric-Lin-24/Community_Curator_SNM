@@ -28,6 +28,10 @@ const AppState = {
   subscribedChats: [],
   loadingSubscribedChats: false,
 
+  // File selection mode (for scheduler -> documents flow)
+  fileSelectionMode: false,
+  selectedCloudFilesForScheduler: [],
+
   // Forms
   microsoftForms: [],
   formSubmissions: [],
