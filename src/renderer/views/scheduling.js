@@ -81,13 +81,27 @@ function renderScheduling() {
                   ? getRecipientName(msg.target_user_id)
                   : (msg.recipient || 'Unknown');
 
+                // Check if message has file attachments
+                const hasFiles = (msg.file_paths && msg.file_paths.length > 0) || 
+                                (msg.file_urls && msg.file_urls.length > 0) ||
+                                (msg.files && msg.files.length > 0);
+                const fileCount = hasFiles ? 
+                  (msg.file_paths?.length || msg.file_urls?.length || msg.files?.length || 0) : 0;
+
                 return `
                 <div class="message-item" style="animation: slideUp 0.3s ease ${index * 0.05}s both;">
                   <div class="message-status ${msg.status === 'sent' ? 'sent' : 'pending'}"></div>
                   <div class="message-content">
                     <div class="flex justify-between items-start mb-1">
                       <span class="message-recipient">${recipientName}</span>
-                      <span class="badge ${msg.status === 'sent' ? 'badge-success' : 'badge-warning'}">${msg.status || 'Pending'}</span>
+                      <div class="flex gap-2 items-center">
+                        ${hasFiles ? `<span class="badge badge-info" title="${fileCount} file(s) attached">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: inline; margin-right: 4px;">
+                            <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+                          </svg>${fileCount}
+                        </span>` : ''}
+                        <span class="badge ${msg.status === 'sent' ? 'badge-success' : 'badge-warning'}">${msg.status || 'Pending'}</span>
+                      </div>
                     </div>
                     <p class="message-preview">${msg.message_content || ''}</p>
                     <span class="text-xs text-muted mt-2">${formatDateTime(msg.scheduled_time)}</span>

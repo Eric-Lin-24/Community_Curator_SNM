@@ -354,6 +354,16 @@ const AzureVMAPI = {
             localMsg.status = 'sent';
             localMsg.sent_at = serverMsg.sent_at || new Date().toISOString();
           }
+
+          // Merge file information from server
+          if (serverMsg.file_paths && serverMsg.file_paths.length > 0) {
+            localMsg.file_paths = serverMsg.file_paths;
+            console.log(`📎 Updated file attachments for message ${serverMsg.id}: ${serverMsg.file_paths.length} file(s)`);
+          }
+          if (serverMsg.file_urls && serverMsg.file_urls.length > 0) {
+            localMsg.file_urls = serverMsg.file_urls;
+          }
+
           // Make sure the server ID is stored
           if (!localMsg.server_id && serverMsg.id) {
             localMsg.server_id = serverMsg.id;
@@ -450,17 +460,35 @@ const AzureVMAPI = {
           seen.add(key);
           uniqueMessages.push(msg);
         } else {
-          // If duplicate found, keep the one with 'sent' status
+          // If duplicate found, merge the information
           const existingIndex = uniqueMessages.findIndex(m =>
             m.message_content === msg.message_content &&
             m.scheduled_time === msg.scheduled_time &&
             m.target_user_id === msg.target_user_id
           );
 
-          if (existingIndex !== -1 && msg.status === 'sent' && uniqueMessages[existingIndex].status !== 'sent') {
-            // Replace pending with sent
-            console.log(`🔄 Replacing duplicate pending message with sent version: ${msg.id}`);
-            uniqueMessages[existingIndex] = msg;
+          if (existingIndex !== -1) {
+            const existing = uniqueMessages[existingIndex];
+
+            // Merge file attachments from both entries
+            const existingFiles = existing.file_paths || existing.file_urls || [];
+            const newFiles = msg.file_paths || msg.file_urls || [];
+
+            if (newFiles.length > 0 && existingFiles.length === 0) {
+              existing.file_paths = msg.file_paths;
+              existing.file_urls = msg.file_urls;
+              console.log(`📎 Merged file attachments from duplicate: ${newFiles.length} file(s)`);
+            }
+
+            // Prefer 'sent' status over 'pending'
+            if (msg.status === 'sent' && existing.status !== 'sent') {
+              console.log(`🔄 Updating duplicate to sent status: ${msg.id}`);
+              existing.status = 'sent';
+              existing.sent_at = msg.sent_at;
+              // Also update the ID to match the sent version
+              existing.id = msg.id;
+              existing.server_id = msg.server_id || msg.id;
+            }
           }
         }
       });
