@@ -223,6 +223,19 @@ function renderScheduleMessagePage() {
 
   setupDragAndDrop();
   updateCharCount();
+    // If Dashboard (or anywhere else) requested a prefilled schedule time, apply it once.
+    // AppState.scheduleMessagePrefillISO should be an ISO string.
+    try {
+      const prefillISO = AppState && AppState.scheduleMessagePrefillISO;
+      if (prefillISO) {
+        const dt = document.getElementById('message-datetime');
+        if (dt) dt.value = new Date(prefillISO).toISOString().slice(0, 16);
+        AppState.scheduleMessagePrefillISO = null;
+      }
+    } catch (e) {
+      // no-op: prefill is best-effort
+    }
+
 }
 
 function updateCharCount() {
