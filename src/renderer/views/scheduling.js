@@ -10,7 +10,7 @@ function renderScheduling() {
   content.innerHTML = `
     <div class="animate-slide-up">
       <div class="grid grid-cols-3 gap-6">
-        
+
         <div class="card" style="grid-column: span 1;">
           <div class="flex items-center gap-3 mb-6">
             <div class="stat-icon teal" style="width: 40px; height: 40px;">
@@ -21,7 +21,7 @@ function renderScheduling() {
               <p class="text-xs text-muted">Send a new message</p>
             </div>
           </div>
-          
+
           <div class="flex flex-col gap-4">
             <div class="form-group">
               <label class="form-label">Recipient</label>
@@ -30,24 +30,24 @@ function renderScheduling() {
                 ${subscribedChats.map(chat => `<option value="${chat.user_id}" data-chat-id="${chat.chat_id}" data-platform="${chat.platform || 'whatsapp'}">${chat.name || chat.id}</option>`).join('')}
               </select>
             </div>
-            
+
             <div class="form-group">
               <label class="form-label">Message</label>
               <textarea id="quick-message" rows="4" placeholder="Type your message..."></textarea>
             </div>
-            
+
             <div class="form-group">
               <label class="form-label">Schedule For</label>
               <input type="datetime-local" id="quick-datetime">
             </div>
-            
+
             <button class="btn btn-primary w-full" onclick="quickScheduleMessage()">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
               Schedule Message
             </button>
-            
+
             <div class="divider"></div>
-            
+
             <button class="btn btn-secondary w-full" onclick="navigateTo('scheduleMessage')">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
               Open Full Editor
@@ -129,7 +129,7 @@ function renderScheduling() {
             Refresh
           </button>
         </div>
-        
+
         ${subscribedChats.length === 0 ? `
           <div class="text-center py-8 text-muted"><p>No subscribed chats found.</p></div>
         ` : `
