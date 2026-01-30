@@ -334,12 +334,23 @@ const AzureVMAPI = {
       const messagesToRemove = [];
       AppState.scheduledMessages.forEach((localMsg, index) => {
         // Find matching server message by ID or by server_id
-        const serverMsg = serverMessages.find(s => s.id === localMsg.id || s.id === localMsg.server_id);
+        let serverMsg = serverMessages.find(s => s.id === localMsg.id || s.id === localMsg.server_id);
+
+        // If not found by ID, try to match by content (for when server creates new entry for sent messages)
+        if (!serverMsg) {
+          serverMsg = serverMessages.find(s =>
+            s.message === localMsg.message_content &&
+            s.scheduled_timestamp === localMsg.scheduled_time &&
+            (s.target_user_id === localMsg.target_user_id ||
+             (Array.isArray(s.target_user_id) && Array.isArray(localMsg.target_user_id) &&
+              s.target_user_id.join(',') === localMsg.target_user_id.join(',')))
+          );
+        }
 
         if (serverMsg) {
           // Update status if message was sent
           if (serverMsg.is_sent === true && localMsg.status !== 'sent') {
-            console.log(`✓ Message ${serverMsg.id} marked as SENT`);
+            console.log(`✓ Message ${serverMsg.id} marked as SENT (was pending: ${localMsg.id})`);
             localMsg.status = 'sent';
             localMsg.sent_at = serverMsg.sent_at || new Date().toISOString();
           }
@@ -366,11 +377,21 @@ const AzureVMAPI = {
       // Add new messages from server that we don't have locally
       let addedCount = 0;
       serverMessages.forEach(serverMsg => {
+        // Check by ID first
         const existsLocally = AppState.scheduledMessages.some(
           m => m.id === serverMsg.id || m.server_id === serverMsg.id
         );
 
-        if (!existsLocally) {
+        // Also check by content to avoid duplicates when server creates new entry for sent messages
+        const duplicateByContent = !existsLocally && AppState.scheduledMessages.some(
+          m => m.message_content === serverMsg.message &&
+               m.scheduled_time === serverMsg.scheduled_timestamp &&
+               (m.target_user_id === serverMsg.target_user_id ||
+                (Array.isArray(m.target_user_id) && Array.isArray(serverMsg.target_user_id) &&
+                 m.target_user_id.join(',') === serverMsg.target_user_id.join(',')))
+        );
+
+        if (!existsLocally && !duplicateByContent) {
           console.log(`➕ Adding new message from server: ${serverMsg.id}`);
 
           // Look up human-readable name from subscribed chats using target_user_id
@@ -414,12 +435,46 @@ const AzureVMAPI = {
       const totalChanges = messagesToRemove.length + addedCount;
       if (totalChanges > 0) {
         console.log(`✓ Sync complete: ${messagesToRemove.length} removed, ${addedCount} added`);
+      } else {
+        console.log('No messages updated from server sync');
+      }
 
+      // Clean up any duplicate messages (same content, recipient, and time)
+      const uniqueMessages = [];
+      const seen = new Set();
+
+      AppState.scheduledMessages.forEach(msg => {
+        const key = `${msg.message_content}|${msg.scheduled_time}|${msg.target_user_id}`;
+
+        if (!seen.has(key)) {
+          seen.add(key);
+          uniqueMessages.push(msg);
+        } else {
+          // If duplicate found, keep the one with 'sent' status
+          const existingIndex = uniqueMessages.findIndex(m =>
+            m.message_content === msg.message_content &&
+            m.scheduled_time === msg.scheduled_time &&
+            m.target_user_id === msg.target_user_id
+          );
+
+          if (existingIndex !== -1 && msg.status === 'sent' && uniqueMessages[existingIndex].status !== 'sent') {
+            // Replace pending with sent
+            console.log(`🔄 Replacing duplicate pending message with sent version: ${msg.id}`);
+            uniqueMessages[existingIndex] = msg;
+          }
+        }
+      });
+
+      const duplicatesRemoved = AppState.scheduledMessages.length - uniqueMessages.length;
+      if (duplicatesRemoved > 0) {
+        console.log(`🧹 Removed ${duplicatesRemoved} duplicate message(s)`);
+        AppState.scheduledMessages = uniqueMessages;
+      }
+
+      if (totalChanges > 0 || duplicatesRemoved > 0) {
         if (AppState.currentView === 'scheduling' && typeof renderScheduling === 'function') {
           renderScheduling();
         }
-      } else {
-        console.log('No messages updated from server sync');
       }
 
       return serverMessages;

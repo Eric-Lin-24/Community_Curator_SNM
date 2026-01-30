@@ -97,7 +97,7 @@ function renderSettings() {
         </div>
       </div>
 
-      <div class="card mb-6">
+      <div class="card mb-6" style="margin-top: 48px;">
         <h3 class="font-semibold mb-4">Appearance</h3>
         <div class="form-group" style="max-width: 300px;">
           <label class="form-label">Theme</label>
