@@ -324,30 +324,56 @@ const AzureVMAPI = {
 
       console.log(`📊 Fetched ${serverMessages.length} message(s) from server for user ${AppState.userId}`);
 
-      let updatedCount = 0;
-      let addedCount = 0;
+      // Create a map of server message IDs for quick lookup
+      const serverMessageIds = new Set(serverMessages.map(m => m.id));
 
       AppState.scheduledMessages = AppState.scheduledMessages || [];
 
-      serverMessages.forEach(serverMsg => {
-        const localMsg = AppState.scheduledMessages.find(m => m.id === serverMsg.id);
+      // First, remove local messages that no longer exist on the server (were deleted)
+      // and update messages that have been sent
+      const messagesToRemove = [];
+      AppState.scheduledMessages.forEach((localMsg, index) => {
+        // Find matching server message by ID or by server_id
+        const serverMsg = serverMessages.find(s => s.id === localMsg.id || s.id === localMsg.server_id);
 
-        if (localMsg) {
-          if (!localMsg.from_sender || localMsg.from_sender === AppState.userId) {
-            if (localMsg.status !== 'sent' && serverMsg.is_sent === true) {
-              console.log(`✓ Message ${serverMsg.id} marked as SENT on server`);
-              localMsg.status = 'sent';
-              localMsg.sent_at = serverMsg.sent_at || new Date().toISOString();
-              updatedCount++;
-            } else if (serverMsg.is_sent === false && localMsg.status !== 'pending') {
-              localMsg.status = 'pending';
-              updatedCount++;
-            }
+        if (serverMsg) {
+          // Update status if message was sent
+          if (serverMsg.is_sent === true && localMsg.status !== 'sent') {
+            console.log(`✓ Message ${serverMsg.id} marked as SENT`);
+            localMsg.status = 'sent';
+            localMsg.sent_at = serverMsg.sent_at || new Date().toISOString();
           }
-        } else {
+          // Make sure the server ID is stored
+          if (!localMsg.server_id && serverMsg.id) {
+            localMsg.server_id = serverMsg.id;
+          }
+          // Update the main id to match server id for consistency
+          if (localMsg.id !== serverMsg.id) {
+            localMsg.id = serverMsg.id;
+          }
+        } else if (localMsg.server_id && !serverMessageIds.has(localMsg.server_id)) {
+          // Message was deleted from server
+          console.log(`🗑️ Message ${localMsg.id} no longer on server, removing locally`);
+          messagesToRemove.push(index);
+        }
+      });
+
+      // Remove messages that were deleted on the server (in reverse order to preserve indices)
+      messagesToRemove.reverse().forEach(index => {
+        AppState.scheduledMessages.splice(index, 1);
+      });
+
+      // Add new messages from server that we don't have locally
+      let addedCount = 0;
+      serverMessages.forEach(serverMsg => {
+        const existsLocally = AppState.scheduledMessages.some(
+          m => m.id === serverMsg.id || m.server_id === serverMsg.id
+        );
+
+        if (!existsLocally) {
           console.log(`➕ Adding new message from server: ${serverMsg.id}`);
 
-          // 🔍 Look up human-readable name from subscribed chats using target_user_id
+          // Look up human-readable name from subscribed chats using target_user_id
           let displayName = null;
           const targetId = Array.isArray(serverMsg.target_user_id)
             ? serverMsg.target_user_id[0]
@@ -365,6 +391,7 @@ const AzureVMAPI = {
 
           AppState.scheduledMessages.push({
             id: serverMsg.id,
+            server_id: serverMsg.id,
             recipient: displayName || (Array.isArray(serverMsg.target_user_id)
               ? serverMsg.target_user_id.join(', ')
               : serverMsg.target_user_id),
@@ -384,16 +411,12 @@ const AzureVMAPI = {
         }
       });
 
-      if (updatedCount > 0 || addedCount > 0) {
-        console.log(`✓ Sync complete: ${updatedCount} updated, ${addedCount} added`);
+      const totalChanges = messagesToRemove.length + addedCount;
+      if (totalChanges > 0) {
+        console.log(`✓ Sync complete: ${messagesToRemove.length} removed, ${addedCount} added`);
 
         if (AppState.currentView === 'scheduling' && typeof renderScheduling === 'function') {
           renderScheduling();
-        }
-
-        if (typeof showNotification === 'function') {
-          const totalChanges = updatedCount + addedCount;
-          showNotification(`${totalChanges} message(s) synced from server`, 'success');
         }
       } else {
         console.log('No messages updated from server sync');

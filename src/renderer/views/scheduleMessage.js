@@ -139,7 +139,7 @@ function renderScheduleMessagePage() {
                   <circle cx="12" cy="12" r="10"/>
                   <polyline points="12 6 12 12 16 14"/>
                 </svg>
-                In 1 Hour
+                 In 1 Hour
               </button>
               <button class="btn btn-ghost btn-sm justify-start" onclick="setQuickSchedule('tomorrow')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

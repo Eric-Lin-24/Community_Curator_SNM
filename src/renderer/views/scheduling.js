@@ -165,10 +165,14 @@ async function quickScheduleMessage() {
     const scheduledTimestamp = new Date(datetime).toISOString();
 
     console.log('📤 Sending to Azure VM with target_user_id:', recipient);
-    await AzureVMAPI.scheduleMessage(recipient, message, scheduledTimestamp, []);
+    const serverResponse = await AzureVMAPI.scheduleMessage(recipient, message, scheduledTimestamp, []);
+
+    // Use the server-assigned ID if available
+    const serverId = serverResponse?.id || generateId();
 
     AppState.scheduledMessages.push({
-      id: generateId(),
+      id: serverId,
+      server_id: serverId,
       recipient: selectedChat?.name || recipient,
       message_content: message,
       scheduled_time: scheduledTimestamp,
@@ -191,14 +195,26 @@ async function quickScheduleMessage() {
 async function deleteMessage(messageId) {
   const index = AppState.scheduledMessages.findIndex(m => m.id === messageId);
   if (index > -1) {
+    const message = AppState.scheduledMessages[index];
+    // Use server_id if available, otherwise use the message id
+    const serverMessageId = message.server_id || message.id;
+
     try {
-      await AzureVMAPI.deleteMessage(messageId);
+      await AzureVMAPI.deleteMessage(serverMessageId);
       AppState.scheduledMessages.splice(index, 1);
       showNotification('Message deleted', 'success');
       renderScheduling();
     } catch (error) {
       console.error('Error deleting message:', error);
-      showNotification('Failed to delete message: ' + error.message, 'error');
+      // If server returns 404 (message not found), it may have already been sent/deleted
+      // In this case, we can still remove it locally
+      if (error.message && (error.message.includes('404') || error.message.includes('not found'))) {
+        AppState.scheduledMessages.splice(index, 1);
+        showNotification('Message removed (was already processed on server)', 'info');
+        renderScheduling();
+      } else {
+        showNotification('Failed to delete message: ' + error.message, 'error');
+      }
     }
   }
 }

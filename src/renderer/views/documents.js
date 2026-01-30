@@ -62,9 +62,118 @@ function resetToRoot() {
   renderDocuments();
 }
 
+// Debounce timer for search
+let documentSearchDebounceTimer = null;
+
 function updateDocumentSearch(query) {
   AppState.documentSearchQuery = query || '';
-  renderDocuments();
+
+  // Debounce to avoid re-rendering on every keystroke
+  if (documentSearchDebounceTimer) {
+    clearTimeout(documentSearchDebounceTimer);
+  }
+
+  documentSearchDebounceTimer = setTimeout(() => {
+    // Only update the document grid, not the entire page
+    updateDocumentGrid();
+  }, 100); // 100ms debounce delay
+}
+
+// Update only the document grid without re-rendering the whole page
+function updateDocumentGrid() {
+  const gridContainer = document.getElementById('documents-grid');
+  if (!gridContainer) {
+    // Fallback to full render if grid not found
+    renderDocuments();
+    return;
+  }
+
+  const src = AppState.activeDocumentSource || 'onedrive';
+  const nav = getFolderState();
+
+  let documents = getDocsForActiveSource();
+
+  // Search filtering
+  const q = (AppState.documentSearchQuery || '').trim().toLowerCase();
+  if (q) {
+    documents = documents.filter(d =>
+      (d.title || '').toLowerCase().includes(q) ||
+      (d.content || '').toLowerCase().includes(q)
+    );
+  }
+
+  // Folder-first ordering
+  documents = documents.slice().sort((a, b) => {
+    const af = isFolderDoc(a) ? 0 : 1;
+    const bf = isFolderDoc(b) ? 0 : 1;
+    if (af !== bf) return af - bf;
+    return (a.title || '').localeCompare(b.title || '');
+  });
+
+  gridContainer.innerHTML = renderDocumentGridContent(documents, src, nav, q);
+}
+
+// Helper function to generate just the grid content
+function renderDocumentGridContent(documents, src, nav, q) {
+  if (documents.length === 0) {
+    return `
+      <div class="card" style="grid-column: span 3; text-align: center; padding: 60px;">
+        <div class="flex justify-center mb-4">
+          <div class="w-16 h-16 rounded-full bg-secondary/50 flex items-center justify-center">
+            <svg width="32" height="32" class="text-muted" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+            </svg>
+          </div>
+        </div>
+        <h3 class="text-lg font-medium mb-2">No items here</h3>
+        <p class="text-muted mb-6">${q ? 'Try a different search term.' : 'Sync your cloud storage to load items.'}</p>
+        <button onclick="refreshCloudDocs({ source: '${src}', folderId: '${nav.folderId || 'root'}' })" class="btn btn-primary">Sync Now</button>
+      </div>
+    `;
+  }
+
+  return documents.map(doc => {
+    const folder = isFolderDoc(doc);
+    const title = (doc.title || 'Untitled').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const meta = folder ? 'Folder' : (doc.mimeType || 'File');
+    const rightAction = folder
+      ? `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); openFolder('${doc.id}', '${title.replace(/'/g, "\\'")}')">Open</button>`
+      : (doc.webUrl
+          ? `<a class="btn btn-secondary btn-sm" href="${doc.webUrl}" target="_blank" onclick="event.stopPropagation();">Open</a>`
+          : `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); viewDocument('${doc.id}')">View</button>`);
+
+    const icon = folder
+      ? `<svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+           <path d="M3 7a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/>
+         </svg>`
+      : `<svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+           <polyline points="14 2 14 8 20 8"/>
+         </svg>`;
+
+    return `
+      <div class="card hover:border-primary/50 group cursor-pointer"
+           onclick="${folder ? `openFolder('${doc.id}', '${title.replace(/'/g, "\\'")}')` : `viewDocument('${doc.id}')`}">
+        <div class="flex justify-between items-start mb-4">
+          <div class="flex gap-3 items-center">
+            <div class="w-10 h-10 rounded-lg bg-secondary/50 flex items-center justify-center text-primary">
+              ${icon}
+            </div>
+            <div>
+              <div class="font-medium">${title}</div>
+              <div class="text-xs text-muted">${meta}</div>
+            </div>
+          </div>
+          ${rightAction}
+        </div>
+
+        <div class="text-xs text-muted">
+          ${doc.updated_at ? `Updated: ${new Date(doc.updated_at).toLocaleString()}` : (doc.created_at ? `Added: ${new Date(doc.created_at).toLocaleString()}` : '')}
+        </div>
+      </div>
+    `;
+  }).join('');
 }
 
 function renderDocuments() {
@@ -157,62 +266,8 @@ function renderDocuments() {
         <span class="text-muted">${breadcrumb ? breadcrumb : ''}</span>
       </div>
 
-      <div class="grid-cols-3">
-        ${documents.length === 0 ? `
-          <div class="card" style="grid-column: span 3; text-align: center; padding: 60px;">
-            <div class="flex justify-center mb-4">
-              <div class="w-16 h-16 rounded-full bg-secondary/50 flex items-center justify-center">
-                <svg width="32" height="32" class="text-muted" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                  <polyline points="14 2 14 8 20 8"></polyline>
-                </svg>
-              </div>
-            </div>
-            <h3 class="text-lg font-medium mb-2">No items here</h3>
-            <p class="text-muted mb-6">${q ? 'Try a different search term.' : 'Sync your cloud storage to load items.'}</p>
-            <button onclick="refreshCloudDocs({ source: '${src}', folderId: '${nav.folderId || 'root'}' })" class="btn btn-primary">Sync Now</button>
-          </div>
-        ` : documents.map(doc => {
-          const folder = isFolderDoc(doc);
-          const title = (doc.title || 'Untitled').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-          const meta = folder ? 'Folder' : (doc.mimeType || 'File');
-          const rightAction = folder
-            ? `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); openFolder('${doc.id}', '${title.replace(/'/g, "\\'")}')">Open</button>`
-            : (doc.webUrl
-                ? `<a class="btn btn-secondary btn-sm" href="${doc.webUrl}" target="_blank" onclick="event.stopPropagation();">Open</a>`
-                : `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); viewDocument('${doc.id}')">View</button>`);
-
-          const icon = folder
-            ? `<svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                 <path d="M3 7a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/>
-               </svg>`
-            : `<svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                 <polyline points="14 2 14 8 20 8"/>
-               </svg>`;
-
-          return `
-            <div class="card hover:border-primary/50 group cursor-pointer"
-                 onclick="${folder ? `openFolder('${doc.id}', '${title.replace(/'/g, "\\'")}')` : `viewDocument('${doc.id}')`}">
-              <div class="flex justify-between items-start mb-4">
-                <div class="flex gap-3 items-center">
-                  <div class="w-10 h-10 rounded-lg bg-secondary/50 flex items-center justify-center text-primary">
-                    ${icon}
-                  </div>
-                  <div>
-                    <div class="font-medium">${title}</div>
-                    <div class="text-xs text-muted">${meta}</div>
-                  </div>
-                </div>
-                ${rightAction}
-              </div>
-
-              <div class="text-xs text-muted">
-                ${doc.updated_at ? `Updated: ${new Date(doc.updated_at).toLocaleString()}` : (doc.created_at ? `Added: ${new Date(doc.created_at).toLocaleString()}` : '')}
-              </div>
-            </div>
-          `;
-        }).join('')}
+      <div id="documents-grid" class="grid-cols-3">
+        ${renderDocumentGridContent(documents, src, nav, q)}
       </div>
     </div>
   `;
@@ -226,4 +281,6 @@ if (typeof window !== 'undefined') {
   window.goBackFolder = goBackFolder;
   window.resetToRoot = resetToRoot;
   window.updateDocumentSearch = updateDocumentSearch;
+  window.updateDocumentGrid = updateDocumentGrid;
+  window.renderDocumentGridContent = renderDocumentGridContent;
 }
