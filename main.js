@@ -154,52 +154,219 @@ function createAuthServer() {
             <!DOCTYPE html>
             <html>
             <head>
-              <title>Authentication Successful</title>
+              <title>Microsoft Account Connected</title>
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
               <style>
+                * { margin: 0; padding: 0; box-sizing: border-box; }
+                
                 body {
-                  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', sans-serif;
                   display: flex;
                   align-items: center;
                   justify-content: center;
-                  height: 100vh;
-                  margin: 0;
-                  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                  min-height: 100vh;
+                  background: linear-gradient(135deg, #0078d4 0%, #00bcf2 100%);
+                  overflow: hidden;
                 }
+                
                 .container {
                   text-align: center;
                   background: white;
-                  padding: 40px;
-                  border-radius: 12px;
-                  box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+                  padding: 60px 50px;
+                  border-radius: 24px;
+                  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+                  max-width: 480px;
+                  width: 90%;
+                  position: relative;
+                  animation: slideUp 0.5s ease-out;
                 }
+                
+                @keyframes slideUp {
+                  from { transform: translateY(30px); opacity: 0; }
+                  to { transform: translateY(0); opacity: 1; }
+                }
+                
+                @keyframes checkmark {
+                  0% { transform: scale(0); opacity: 0; }
+                  50% { transform: scale(1.1); }
+                  100% { transform: scale(1); opacity: 1; }
+                }
+                
+                @keyframes pulse {
+                  0%, 100% { transform: scale(1); }
+                  50% { transform: scale(1.05); }
+                }
+                
                 .success-icon {
-                  width: 80px;
-                  height: 80px;
-                  margin: 0 auto 20px;
-                  background: #10b981;
+                  width: 100px;
+                  height: 100px;
+                  margin: 0 auto 30px;
+                  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
                   border-radius: 50%;
                   display: flex;
                   align-items: center;
                   justify-content: center;
+                  box-shadow: 0 10px 30px rgba(16, 185, 129, 0.4);
+                  animation: checkmark 0.6s ease-out 0.2s both;
                 }
+                
                 .checkmark {
-                  color: white;
-                  font-size: 50px;
+                  width: 50px;
+                  height: 50px;
                 }
-                h1 { color: #1f2937; margin: 0 0 10px 0; }
-                p { color: #6b7280; margin: 0; }
+                
+                .brand-logo {
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  gap: 12px;
+                  margin-bottom: 24px;
+                  animation: fadeIn 0.8s ease-out 0.4s both;
+                }
+                
+                @keyframes fadeIn {
+                  from { opacity: 0; }
+                  to { opacity: 1; }
+                }
+                
+                .microsoft-icon {
+                  width: 32px;
+                  height: 32px;
+                  background: linear-gradient(135deg, #f35325 0%, #f35325 50%, #81bc06 50%, #81bc06 100%);
+                  border-radius: 4px;
+                }
+                
+                h1 { 
+                  color: #1f2937;
+                  font-size: 32px;
+                  font-weight: 700;
+                  margin: 0 0 12px 0;
+                  animation: fadeIn 0.8s ease-out 0.5s both;
+                }
+                
+                .subtitle {
+                  color: #0078d4;
+                  font-size: 18px;
+                  font-weight: 600;
+                  margin-bottom: 16px;
+                  animation: fadeIn 0.8s ease-out 0.6s both;
+                }
+                
+                p { 
+                  color: #6b7280;
+                  font-size: 15px;
+                  line-height: 1.6;
+                  margin: 0;
+                  animation: fadeIn 0.8s ease-out 0.7s both;
+                }
+                
+                .features {
+                  margin-top: 30px;
+                  padding-top: 30px;
+                  border-top: 1px solid #e5e7eb;
+                  animation: fadeIn 0.8s ease-out 0.8s both;
+                }
+                
+                .feature-item {
+                  display: flex;
+                  align-items: center;
+                  gap: 12px;
+                  margin-bottom: 12px;
+                  color: #4b5563;
+                  font-size: 14px;
+                }
+                
+                .feature-icon {
+                  width: 20px;
+                  height: 20px;
+                  background: #dbeafe;
+                  border-radius: 50%;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  color: #0078d4;
+                  font-size: 12px;
+                  flex-shrink: 0;
+                }
+                
+                .countdown {
+                  margin-top: 24px;
+                  padding: 12px 24px;
+                  background: #f3f4f6;
+                  border-radius: 12px;
+                  color: #6b7280;
+                  font-size: 13px;
+                  animation: fadeIn 0.8s ease-out 0.9s both;
+                }
               </style>
             </head>
             <body>
               <div class="container">
                 <div class="success-icon">
-                  <span class="checkmark">✓</span>
+                  <svg class="checkmark" viewBox="0 0 52 52" xmlns="http://www.w3.org/2000/svg">
+                    <path fill="none" stroke="white" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" d="M14 27l8 8 16-16"/>
+                  </svg>
                 </div>
-                <h1>Authentication Successful!</h1>
-                <p>You can close this window and return to the app.</p>
+                
+                <div class="brand-logo">
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+                    <rect width="10" height="10" fill="#F35325"/>
+                    <rect x="11" width="10" height="10" fill="#81BC06"/>
+                    <rect y="11" width="10" height="10" fill="#05A6F0"/>
+                    <rect x="11" y="11" width="10" height="10" fill="#FFBA08"/>
+                  </svg>
+                  <span style="color: #0078d4; font-weight: 600; font-size: 16px;">Microsoft Account</span>
+                </div>
+                
+                <h1>Successfully Connected!</h1>
+                <p class="subtitle">OneDrive & SharePoint Ready</p>
+                <p>Your Microsoft account has been authenticated. You can now access your OneDrive files and SharePoint documents directly from the app.</p>
+                
+                <div class="features">
+                  <div class="feature-item">
+                    <div class="feature-icon">
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M2 6l3 3 5-6" stroke="#0078d4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </div>
+                    <span>Access OneDrive files</span>
+                  </div>
+                  <div class="feature-item">
+                    <div class="feature-icon">
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M2 6l3 3 5-6" stroke="#0078d4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </div>
+                    <span>Browse SharePoint documents</span>
+                  </div>
+                  <div class="feature-item">
+                    <div class="feature-icon">
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M2 6l3 3 5-6" stroke="#0078d4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </div>
+                    <span>Secure authentication</span>
+                  </div>
+                </div>
+                
+                <div class="countdown">
+                  This window will close automatically in <span id="timer">3</span> seconds...
+                </div>
               </div>
+              
               <script>
-                setTimeout(() => window.close(), 2000);
+                let seconds = 3;
+                const timerElement = document.getElementById('timer');
+                
+                const countdown = setInterval(() => {
+                  seconds--;
+                  timerElement.textContent = seconds;
+                  
+                  if (seconds <= 0) {
+                    clearInterval(countdown);
+                    window.close();
+                  }
+                }, 1000);
               </script>
             </body>
             </html>
@@ -324,51 +491,213 @@ function createGoogleAuthServer() {
             <html>
             <head>
               <title>Google Drive Connected</title>
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
               <style>
+                * { margin: 0; padding: 0; box-sizing: border-box; }
+                
                 body {
-                  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                  font-family: 'Google Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
                   display: flex;
                   align-items: center;
                   justify-content: center;
-                  height: 100vh;
-                  margin: 0;
-                  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                  min-height: 100vh;
+                  background: linear-gradient(135deg, #4285f4 0%, #34a853 100%);
+                  overflow: hidden;
                 }
+                
                 .container {
                   text-align: center;
                   background: white;
-                  padding: 40px;
-                  border-radius: 12px;
-                  box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+                  padding: 60px 50px;
+                  border-radius: 24px;
+                  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+                  max-width: 480px;
+                  width: 90%;
+                  position: relative;
+                  animation: slideUp 0.5s ease-out;
                 }
+                
+                @keyframes slideUp {
+                  from { transform: translateY(30px); opacity: 0; }
+                  to { transform: translateY(0); opacity: 1; }
+                }
+                
+                @keyframes checkmark {
+                  0% { transform: scale(0) rotate(-45deg); opacity: 0; }
+                  50% { transform: scale(1.1) rotate(0deg); }
+                  100% { transform: scale(1) rotate(0deg); opacity: 1; }
+                }
+                
                 .success-icon {
-                  width: 80px;
-                  height: 80px;
-                  margin: 0 auto 20px;
-                  background: #10b981;
+                  width: 100px;
+                  height: 100px;
+                  margin: 0 auto 30px;
+                  background: linear-gradient(135deg, #34a853 0%, #0f9d58 100%);
                   border-radius: 50%;
                   display: flex;
                   align-items: center;
                   justify-content: center;
+                  box-shadow: 0 10px 30px rgba(52, 168, 83, 0.4);
+                  animation: checkmark 0.6s ease-out 0.2s both;
                 }
+                
                 .checkmark {
-                  color: white;
-                  font-size: 50px;
+                  width: 50px;
+                  height: 50px;
                 }
-                h1 { color: #1f2937; margin: 0 0 10px 0; }
-                p { color: #6b7280; margin: 0; }
+                
+                .brand-logo {
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  gap: 12px;
+                  margin-bottom: 24px;
+                  animation: fadeIn 0.8s ease-out 0.4s both;
+                }
+                
+                @keyframes fadeIn {
+                  from { opacity: 0; }
+                  to { opacity: 1; }
+                }
+                
+                .google-drive-icon {
+                  width: 32px;
+                  height: 32px;
+                }
+                
+                h1 { 
+                  color: #1f2937;
+                  font-size: 32px;
+                  font-weight: 700;
+                  margin: 0 0 12px 0;
+                  animation: fadeIn 0.8s ease-out 0.5s both;
+                }
+                
+                .subtitle {
+                  color: #4285f4;
+                  font-size: 18px;
+                  font-weight: 600;
+                  margin-bottom: 16px;
+                  animation: fadeIn 0.8s ease-out 0.6s both;
+                }
+                
+                p { 
+                  color: #6b7280;
+                  font-size: 15px;
+                  line-height: 1.6;
+                  margin: 0;
+                  animation: fadeIn 0.8s ease-out 0.7s both;
+                }
+                
+                .features {
+                  margin-top: 30px;
+                  padding-top: 30px;
+                  border-top: 1px solid #e5e7eb;
+                  animation: fadeIn 0.8s ease-out 0.8s both;
+                }
+                
+                .feature-item {
+                  display: flex;
+                  align-items: center;
+                  gap: 12px;
+                  margin-bottom: 12px;
+                  color: #4b5563;
+                  font-size: 14px;
+                }
+                
+                .feature-icon {
+                  width: 20px;
+                  height: 20px;
+                  background: #e8f5e9;
+                  border-radius: 50%;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  color: #34a853;
+                  font-size: 12px;
+                  flex-shrink: 0;
+                }
+                
+                .countdown {
+                  margin-top: 24px;
+                  padding: 12px 24px;
+                  background: #f3f4f6;
+                  border-radius: 12px;
+                  color: #6b7280;
+                  font-size: 13px;
+                  animation: fadeIn 0.8s ease-out 0.9s both;
+                }
               </style>
             </head>
             <body>
               <div class="container">
                 <div class="success-icon">
-                  <span class="checkmark">✓</span>
+                  <svg class="checkmark" viewBox="0 0 52 52" xmlns="http://www.w3.org/2000/svg">
+                    <path fill="none" stroke="white" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" d="M14 27l8 8 16-16"/>
+                  </svg>
                 </div>
-                <h1>Google Drive Connected!</h1>
-                <p>You can close this window and return to the app.</p>
+                
+                <div class="brand-logo">
+                  <svg class="google-drive-icon" viewBox="0 0 87.3 78" xmlns="http://www.w3.org/2000/svg">
+                    <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/>
+                    <path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z" fill="#00ac47"/>
+                    <path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335"/>
+                    <path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d"/>
+                    <path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc"/>
+                    <path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/>
+                  </svg>
+                  <span style="color: #4285f4; font-weight: 600; font-size: 16px;">Google Drive</span>
+                </div>
+                
+                <h1>Successfully Connected!</h1>
+                <p class="subtitle">Drive Access Enabled</p>
+                <p>Your Google Drive account has been authenticated. You can now access and attach your Google Drive files directly from the app.</p>
+                
+                <div class="features">
+                  <div class="feature-item">
+                    <div class="feature-icon">
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M2 6l3 3 5-6" stroke="#34a853" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </div>
+                    <span>Browse your Drive files</span>
+                  </div>
+                  <div class="feature-item">
+                    <div class="feature-icon">
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M2 6l3 3 5-6" stroke="#34a853" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </div>
+                    <span>Attach files to messages</span>
+                  </div>
+                  <div class="feature-item">
+                    <div class="feature-icon">
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M2 6l3 3 5-6" stroke="#34a853" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </div>
+                    <span>Secure OAuth authentication</span>
+                  </div>
+                </div>
+                
+                <div class="countdown">
+                  This window will close automatically in <span id="timer">3</span> seconds...
+                </div>
               </div>
+              
               <script>
-                setTimeout(() => window.close(), 2000);
+                let seconds = 3;
+                const timerElement = document.getElementById('timer');
+                
+                const countdown = setInterval(() => {
+                  seconds--;
+                  timerElement.textContent = seconds;
+                  
+                  if (seconds <= 0) {
+                    clearInterval(countdown);
+                    window.close();
+                  }
+                }, 1000);
               </script>
             </body>
             </html>
