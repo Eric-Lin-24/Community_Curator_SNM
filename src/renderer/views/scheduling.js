@@ -2,9 +2,94 @@
 // SCHEDULING VIEW
 // ============================================
 
+// Store selected recipients for quick schedule (multi-select)
+let quickSelectedRecipients = [];
+
 function _draftStorageKey() {
   // user-scoped drafts
   return AppState.userId ? `message_drafts_${AppState.userId}` : 'message_drafts_guest';
+}
+
+// Helper for escaping strings in inline handlers
+function _escAttrScheduling(str = '') {
+  return String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+// Toggle recipient in quick schedule
+function toggleQuickRecipient(userId, chatName, platform) {
+  const index = quickSelectedRecipients.findIndex(r => r.userId === userId);
+  if (index > -1) {
+    quickSelectedRecipients.splice(index, 1);
+  } else {
+    quickSelectedRecipients.push({ userId, chatName, platform });
+  }
+  renderQuickRecipientsList();
+  updateQuickRecipientCheckboxes();
+}
+
+// Remove a recipient from quick selection
+function removeQuickRecipient(userId) {
+  quickSelectedRecipients = quickSelectedRecipients.filter(r => r.userId !== userId);
+  renderQuickRecipientsList();
+  updateQuickRecipientCheckboxes();
+}
+
+// Update checkbox states in the quick dropdown
+function updateQuickRecipientCheckboxes() {
+  const allCheckboxes = document.querySelectorAll('#quick-recipient-dropdown input[type="checkbox"]');
+  allCheckboxes.forEach(cb => {
+    const userId = cb.dataset.userId;
+    cb.checked = quickSelectedRecipients.some(r => r.userId === userId);
+  });
+}
+
+// Render selected recipients as tags for quick schedule
+function renderQuickRecipientsList() {
+  const container = document.getElementById('quick-selected-recipients-list');
+  if (!container) return;
+
+  if (quickSelectedRecipients.length === 0) {
+    container.innerHTML = '<span class="text-xs text-muted">No recipients selected</span>';
+    return;
+  }
+
+  container.innerHTML = quickSelectedRecipients.map(r => `
+    <div class="recipient-tag" style="display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; background: var(--accent-primary-soft); border-radius: 12px; margin: 2px;">
+      <span class="text-xs" style="color: var(--accent-primary);">${r.chatName}</span>
+      <button onclick="removeQuickRecipient('${_escAttrScheduling(r.userId)}')" style="background: none; border: none; cursor: pointer; padding: 0; display: flex; color: var(--accent-primary);">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+  `).join('');
+}
+
+// Toggle quick recipient dropdown visibility
+function toggleQuickRecipientDropdown() {
+  const dropdown = document.getElementById('quick-recipient-dropdown');
+  if (dropdown) {
+    dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+  }
+}
+
+// Select all recipients for quick schedule
+function selectAllQuickRecipients() {
+  const subscribedChats = AppState.subscribedChats || [];
+  quickSelectedRecipients = subscribedChats.map(chat => ({
+    userId: chat.user_id,
+    chatName: chat.name || chat.chat_name || chat.id,
+    platform: chat.platform || 'whatsapp'
+  }));
+  renderQuickRecipientsList();
+  updateQuickRecipientCheckboxes();
+}
+
+// Clear all quick recipients
+function clearAllQuickRecipients() {
+  quickSelectedRecipients = [];
+  renderQuickRecipientsList();
+  updateQuickRecipientCheckboxes();
 }
 
 function loadMessageDrafts() {
@@ -37,27 +122,28 @@ function getRecipientNameByUserId(userId) {
 }
 
 function saveQuickDraft() {
-  const recipient = document.getElementById('quick-recipient')?.value || '';
   const message = document.getElementById('quick-message')?.value || '';
 
-  if (!recipient) { showNotification('Please select a recipient', 'warning'); return; }
+  if (quickSelectedRecipients.length === 0) { showNotification('Please select at least one recipient', 'warning'); return; }
   if (!message.trim()) { showNotification('Please enter a message to save', 'warning'); return; }
 
   loadMessageDrafts();
 
-  const draft = {
-    id: generateId(),
-    target_user_id: recipient,
-    message_content: message,
-    created_at: new Date().toISOString()
-  };
+  // Save a draft for each selected recipient
+  quickSelectedRecipients.forEach(recipient => {
+    const draft = {
+      id: generateId(),
+      target_user_id: recipient.userId,
+      message_content: message,
+      created_at: new Date().toISOString()
+    };
+    AppState.messageDrafts.unshift(draft);
+  });
 
-  AppState.messageDrafts.unshift(draft);
   saveMessageDrafts();
+  showNotification(`Draft saved for ${quickSelectedRecipients.length} recipient(s)`, 'success');
 
-  showNotification('Draft saved', 'success');
-
-  // optional: clear the quick message box (keeps recipient)
+  // optional: clear the quick message box
   document.getElementById('quick-message').value = '';
   renderScheduling();
 }
@@ -97,6 +183,9 @@ function renderScheduling() {
 
   const activeTab = AppState.schedulingActiveTab || 'queue';
 
+  // Reset quick selected recipients on render
+  quickSelectedRecipients = [];
+
   content.innerHTML = `
     <div class="animate-slide-up">
       <div class="grid grid-cols-3 gap-6">
@@ -112,21 +201,58 @@ function renderScheduling() {
             </div>
             <div>
               <h3 class="font-semibold">Quick Schedule</h3>
-              <p class="text-xs text-muted">Send a new message</p>
+              <p class="text-xs text-muted">Send to multiple recipients</p>
             </div>
           </div>
 
           <div class="flex flex-col gap-4">
             <div class="form-group">
-              <label class="form-label">Recipient</label>
-              <select id="quick-recipient">
-                <option value="">Select a chat.</option>
-                ${(subscribedChats || []).map(chat =>
-                  `<option value="${chat.user_id}" data-chat-id="${chat.chat_id}" data-platform="${chat.platform || 'whatsapp'}">
-                    ${chat.name || chat.id}
-                  </option>`
-                ).join('')}
-              </select>
+              <label class="form-label">Recipients</label>
+              
+              <!-- Selected recipients display -->
+              <div id="quick-selected-recipients-list" class="flex flex-wrap gap-1 mb-2" style="min-height: 24px;">
+                <span class="text-xs text-muted">No recipients selected</span>
+              </div>
+              
+              <!-- Dropdown trigger -->
+              <div style="position: relative;">
+                <button type="button" class="form-input w-full text-left flex justify-between items-center" onclick="toggleQuickRecipientDropdown()" style="cursor: pointer; padding: 8px 12px;">
+                  <span class="text-muted text-sm">Select recipients...</span>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="6 9 12 15 18 9"/>
+                  </svg>
+                </button>
+                
+                <!-- Dropdown menu -->
+                <div id="quick-recipient-dropdown" style="display: none; position: absolute; top: 100%; left: 0; right: 0; z-index: 50; background: var(--bg-secondary); border: 1px solid var(--border-default); border-radius: 8px; margin-top: 4px; max-height: 200px; overflow-y: auto; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+                  <!-- Select All / Clear All -->
+                  <div class="flex justify-between items-center p-2" style="border-bottom: 1px solid var(--border-subtle);">
+                    <button type="button" class="btn btn-ghost btn-sm" style="padding: 4px 8px; font-size: 11px;" onclick="selectAllQuickRecipients()">All</button>
+                    <button type="button" class="btn btn-ghost btn-sm" style="padding: 4px 8px; font-size: 11px;" onclick="clearAllQuickRecipients()">Clear</button>
+                  </div>
+                  
+                  <!-- Chat list with checkboxes -->
+                  ${subscribedChats.length === 0 ? `
+                    <div class="p-3 text-center text-muted text-xs">No chats available</div>
+                  ` : subscribedChats.map(chat => {
+                    const chatName = chat.name || chat.chat_name || chat.id;
+                    const userId = chat.user_id || '';
+                    const platform = chat.platform || 'whatsapp';
+                    return `
+                      <label class="flex items-center gap-2 p-2 cursor-pointer hover:bg-tertiary" style="border-bottom: 1px solid var(--border-subtle);" onclick="event.stopPropagation()">
+                        <input type="checkbox" data-user-id="${userId}" onchange="toggleQuickRecipient('${_escAttrScheduling(userId)}', '${_escAttrScheduling(chatName)}', '${_escAttrScheduling(platform)}')" style="width: 16px; height: 16px; accent-color: var(--accent-primary);">
+                        <span class="text-sm flex-1">${chatName}</span>
+                      </label>
+                    `;
+                  }).join('')}
+                </div>
+              </div>
+              
+              ${subscribedChats.length === 0 ? `
+                <p class="text-xs text-muted mt-1">
+                  <button class="text-accent" style="background: none; border: none; cursor: pointer; text-decoration: underline;" onclick="AzureVMAPI.refreshSubscribedChats()">Refresh chats</button>
+                </p>
+              ` : ''}
             </div>
 
             <div class="form-group">
@@ -336,45 +462,54 @@ function renderScheduling() {
 }
 
 async function quickScheduleMessage() {
-  const recipient = document.getElementById('quick-recipient').value;
   const message = document.getElementById('quick-message').value;
   const datetime = document.getElementById('quick-datetime').value;
 
-  if (!recipient) { showNotification('Please select a recipient', 'warning'); return; }
+  if (quickSelectedRecipients.length === 0) { showNotification('Please select at least one recipient', 'warning'); return; }
   if (!message.trim()) { showNotification('Please enter a message', 'warning'); return; }
   if (!datetime) { showNotification('Please select a date and time', 'warning'); return; }
 
   try {
-    showNotification('Scheduling message.', 'info');
-
-    console.log('🔍 Quick Schedule - Selected recipient (user_id):', recipient);
-
-    // Find the chat by user_id for display purposes
-    const selectedChat = AppState.subscribedChats.find(c => c.user_id === recipient);
-    console.log('✅ Found chat for user_id:', selectedChat);
+    showNotification(`Scheduling message to ${quickSelectedRecipients.length} recipient(s)...`, 'info');
 
     const scheduledTimestamp = new Date(datetime).toISOString();
 
-    console.log('📤 Sending to Azure VM with target_user_id:', recipient);
-    const serverResponse = await AzureVMAPI.scheduleMessage(recipient, message, scheduledTimestamp, []);
+    let successCount = 0;
+    let failCount = 0;
 
-    // Use the server-assigned ID if available
-    const serverId = serverResponse?.id || generateId();
+    for (const recipient of quickSelectedRecipients) {
+      try {
+        console.log('📤 Sending to Azure VM with target_user_id:', recipient.userId);
+        const serverResponse = await AzureVMAPI.scheduleMessage(recipient.userId, message, scheduledTimestamp, []);
 
-    AppState.scheduledMessages.push({
-      id: serverId,
-      server_id: serverId,
-      recipient: selectedChat?.name || recipient,
-      message_content: message,
-      scheduled_time: scheduledTimestamp,
-      status: 'pending',
-      target_user_id: recipient
-    });
+        // Use the server-assigned ID if available
+        const serverId = serverResponse?.id || generateId();
 
-    showNotification('Message scheduled successfully!', 'success');
+        AppState.scheduledMessages.push({
+          id: serverId,
+          server_id: serverId,
+          recipient: recipient.chatName,
+          message_content: message,
+          scheduled_time: scheduledTimestamp,
+          status: 'pending',
+          target_user_id: recipient.userId
+        });
 
-    document.getElementById('quick-recipient').value = '';
+        successCount++;
+      } catch (err) {
+        console.error(`Failed to schedule for ${recipient.chatName}:`, err);
+        failCount++;
+      }
+    }
+
+    if (failCount === 0) {
+      showNotification(`Message scheduled to ${successCount} recipient(s)!`, 'success');
+    } else {
+      showNotification(`Scheduled to ${successCount}, failed for ${failCount} recipient(s)`, 'warning');
+    }
+
     document.getElementById('quick-message').value = '';
+    quickSelectedRecipients = [];
 
     renderScheduling();
   } catch (error) {
@@ -418,4 +553,12 @@ if (typeof window !== 'undefined') {
   window.deleteDraft = deleteDraft;
   window.openDraft = openDraft;
   window.setSchedulingTab = setSchedulingTab;
+
+  // Multi-recipient functions for quick schedule
+  window.toggleQuickRecipient = toggleQuickRecipient;
+  window.removeQuickRecipient = removeQuickRecipient;
+  window.toggleQuickRecipientDropdown = toggleQuickRecipientDropdown;
+  window.selectAllQuickRecipients = selectAllQuickRecipients;
+  window.clearAllQuickRecipients = clearAllQuickRecipients;
+  window.renderQuickRecipientsList = renderQuickRecipientsList;
 }

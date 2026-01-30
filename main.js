@@ -1330,8 +1330,44 @@ ipcMain.handle('get-google-drive-files', async () => {
 
 // Download Google Drive file
 ipcMain.handle('download-google-drive-file', async (event, { fileId, fileName, mimeType }) => {
-  if (!googleTokens || !googleTokens.access_token) {
-    throw new Error('No Google access token available');
+  // Get tokens from storage (like other handlers do)
+  let accessToken = store.get('googleAccessToken');
+  const refreshToken = store.get('googleRefreshToken');
+  const expiry = store.get('googleTokenExpiry');
+
+  if (!accessToken || !refreshToken) {
+    throw new Error('No Google access token available. Please sign in to Google Drive.');
+  }
+
+  // Check if token is expired and refresh if needed
+  if (expiry && Date.now() >= expiry) {
+    console.log('\n🔄 [Google Drive Download] Access token expired, refreshing...');
+    try {
+      oauth2Client.setCredentials({
+        refresh_token: refreshToken
+      });
+
+      const { credentials } = await oauth2Client.refreshAccessToken();
+
+      // Update stored tokens
+      store.set('googleAccessToken', credentials.access_token);
+      store.set('googleTokenExpiry', credentials.expiry_date);
+
+      accessToken = credentials.access_token;
+
+      // Also update googleTokens variable for consistency
+      googleTokens = {
+        access_token: credentials.access_token,
+        refresh_token: refreshToken,
+        expires_at: credentials.expiry_date,
+        token_type: 'Bearer'
+      };
+
+      console.log('   ✓ Token refresh successful\n');
+    } catch (error) {
+      console.error('   ✗ Token refresh failed:', error.message);
+      throw new Error('Failed to refresh Google token. Please sign in again.');
+    }
   }
 
   const googleWorkspaceTypes = {
@@ -1357,7 +1393,7 @@ ipcMain.handle('download-google-drive-file', async (event, { fileId, fileName, m
 
   const response = await fetch(url, {
     headers: {
-      'Authorization': `Bearer ${googleTokens.access_token}`
+      'Authorization': `Bearer ${accessToken}`
     }
   });
 
