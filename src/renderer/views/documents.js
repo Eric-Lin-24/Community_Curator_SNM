@@ -122,7 +122,8 @@ function renderDocuments() {
               value="${(AppState.documentSearchQuery || '').replace(/"/g, '&quot;')}"
               oninput="updateDocumentSearch(this.value)"
             >
-            <button class="btn btn-secondary btn-sm" onclick="refreshCloudDocs({ source: '${src}', folderId: '${nav.folderId || 'root'}' })">
+            <!-- ✅ FIXED: use refreshCurrentView so loader shows -->
+            <button class="btn btn-secondary btn-sm" onclick="refreshCurrentView()">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
                 <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
@@ -170,7 +171,8 @@ function renderDocuments() {
             </div>
             <h3 class="text-lg font-medium mb-2">No items here</h3>
             <p class="text-muted mb-6">${q ? 'Try a different search term.' : 'Sync your cloud storage to load items.'}</p>
-            <button onclick="refreshCloudDocs({ source: '${src}', folderId: '${nav.folderId || 'root'}' })" class="btn btn-primary">Sync Now</button>
+            <!-- ✅ FIXED: use refreshCurrentView so loader shows -->
+            <button onclick="refreshCurrentView()" class="btn btn-primary">Sync Now</button>
           </div>
         ` : documents.map(doc => {
           const folder = isFolderDoc(doc);

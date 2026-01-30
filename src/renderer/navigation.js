@@ -26,6 +26,76 @@ const viewMeta = {
   }
 };
 
+// ===== Loading Overlay (full-page spinner) =====
+function ensureLoadingOverlayStyles() {
+  if (document.getElementById('loading-overlay-styles')) return;
+
+  const style = document.createElement('style');
+  style.id = 'loading-overlay-styles';
+  style.textContent = `
+    @keyframes cc_spin { to { transform: rotate(360deg); } }
+    .cc-loading-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.35);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 9999;
+    }
+    .cc-loading-card {
+      background: white;
+      border-radius: 14px;
+      padding: 18px 20px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+      display: flex; align-items: center; gap: 12px;
+      max-width: 80vw;
+    }
+    .cc-loading-spinner {
+      width: 22px; height: 22px;
+      border-radius: 999px;
+      border: 3px solid #e5e7eb;
+      border-top-color: #2563eb;
+      animation: cc_spin 0.8s linear infinite;
+      flex: 0 0 auto;
+    }
+    .cc-loading-text {
+      font-size: 14px;
+      color: #111827;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 60vw;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+function showLoadingOverlay(text = 'Syncing…') {
+  ensureLoadingOverlayStyles();
+
+  let overlay = document.getElementById('cc-loading-overlay');
+  if (overlay) {
+    const t = overlay.querySelector('.cc-loading-text');
+    if (t) t.textContent = text;
+    return;
+  }
+
+  overlay = document.createElement('div');
+  overlay.id = 'cc-loading-overlay';
+  overlay.className = 'cc-loading-overlay';
+  overlay.innerHTML = `
+    <div class="cc-loading-card">
+      <div class="cc-loading-spinner"></div>
+      <div class="cc-loading-text"></div>
+    </div>
+  `;
+  overlay.querySelector('.cc-loading-text').textContent = text;
+  document.body.appendChild(overlay);
+}
+
+function hideLoadingOverlay() {
+  const overlay = document.getElementById('cc-loading-overlay');
+  if (overlay) overlay.remove();
+}
+
 function navigateTo(view) {
   AppState.currentView = view;
 
@@ -114,19 +184,113 @@ function renderApp() {
   }
 }
 
-function refreshCurrentView() {
+async function refreshCurrentView() {
+  showLoadingOverlay('Syncing…');
   showNotification('Refreshing...', 'info');
 
-  switch (AppState.currentView) {
-    case 'documents':
-      if (typeof refreshCloudDocs === 'function') refreshCloudDocs();
-      break;
-    case 'scheduling':
-      AzureVMAPI.refreshSubscribedChats();
-      break;
-    default:
-      renderApp();
-      showNotification('Refreshed', 'success');
+  const maybeAwait = async (fn) => {
+    if (typeof fn !== 'function') return;
+    const r = fn();
+    if (r && typeof r.then === 'function') await r;
+  };
+
+  try {
+    switch (AppState.currentView) {
+      case 'documents': {
+        showLoadingOverlay('Syncing documents…');
+
+        // Keep the current source + folder (important for your breadcrumb)
+        const src = AppState.activeDocumentSource || 'onedrive';
+        const nav = (AppState.documentNav && AppState.documentNav[src])
+          ? AppState.documentNav[src]
+          : { folderId: 'root' };
+
+        await maybeAwait(() => window.refreshCloudDocs({
+          source: src,
+          folderId: nav.folderId || 'root'
+        }));
+
+        if (typeof renderDocuments === 'function') renderDocuments();
+        break;
+      }
+
+      case 'scheduling': {
+        showLoadingOverlay('Syncing chats and messages…');
+
+        if (window.AzureVMAPI) {
+          await maybeAwait(AzureVMAPI.refreshSubscribedChats);
+
+          // Only call if it exists
+          if (typeof AzureVMAPI.syncMessagesFromServer === 'function') {
+            await maybeAwait(AzureVMAPI.syncMessagesFromServer);
+          }
+        }
+
+        if (typeof renderScheduling === 'function') renderScheduling();
+        break;
+      }
+
+      case 'scheduleMessage': {
+        showLoadingOverlay('Syncing chats…');
+
+        if (window.AzureVMAPI) {
+          await maybeAwait(AzureVMAPI.refreshSubscribedChats);
+          if (typeof AzureVMAPI.syncMessagesFromServer === 'function') {
+            await maybeAwait(AzureVMAPI.syncMessagesFromServer);
+          }
+        }
+
+        if (typeof renderScheduleMessagePage === 'function') {
+          renderScheduleMessagePage();
+        }
+        break;
+      }
+
+      case 'dashboard': {
+        showLoadingOverlay('Syncing dashboard…');
+
+        const tasks = [];
+
+        // docs refresh
+        if (typeof window.refreshCloudDocs === 'function') {
+          const src = AppState.activeDocumentSource || 'onedrive';
+          const nav = (AppState.documentNav && AppState.documentNav[src])
+            ? AppState.documentNav[src]
+            : { folderId: 'root' };
+
+          tasks.push(Promise.resolve().then(() => window.refreshCloudDocs({
+            source: src,
+            folderId: nav.folderId || 'root'
+          })));
+        }
+
+        // chats/messages refresh
+        if (window.AzureVMAPI && typeof AzureVMAPI.refreshSubscribedChats === 'function') {
+          tasks.push(Promise.resolve().then(() => AzureVMAPI.refreshSubscribedChats()));
+        }
+        if (window.AzureVMAPI && typeof AzureVMAPI.syncMessagesFromServer === 'function') {
+          tasks.push(Promise.resolve().then(() => AzureVMAPI.syncMessagesFromServer()));
+        }
+
+        await Promise.all(tasks.map(p => p.catch(err => console.warn('Refresh task failed:', err))));
+
+        if (typeof renderDashboard === 'function') renderDashboard();
+        else renderApp();
+
+        break;
+      }
+
+      default: {
+        renderApp();
+      }
+    }
+
+    showNotification('Refreshed', 'success');
+  } catch (err) {
+    console.error('Refresh failed:', err);
+    showNotification('Refresh failed: ' + (err?.message || String(err)), 'error');
+  } finally {
+    hideLoadingOverlay();
   }
 }
 
