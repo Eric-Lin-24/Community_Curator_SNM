@@ -1,7 +1,8 @@
 // ============================================
 // DASHBOARD VIEW
 //  - 3 metrics (sent last 30d, pending, next message)
-//  - Month calendar view of scheduled messages
+//  - Compact month calendar (dots only)  ✅ DASHBOARD ONLY
+//  - Quick Schedule moved onto dashboard ✅ DASHBOARD ONLY
 // ============================================
 
 function _dashSafe(str = '') {
@@ -100,31 +101,75 @@ function _dashStatCard({ title, value, meta, tone = 'teal', icon }) {
   `;
 }
 
-function _dashCalendarStylesOnce() {
-  if (document.getElementById('cc-dashboard-calendar-styles')) return;
+// ------------------------------
+// Draft storage (shared with Scheduling page behavior)
+// ------------------------------
+function _dashDraftStorageKey() {
+  // user-scoped drafts (same pattern as scheduling.js)
+  return AppState.userId ? `message_drafts_${AppState.userId}` : 'message_drafts_guest';
+}
+
+function _dashLoadMessageDrafts() {
+  try {
+    const raw = localStorage.getItem(_dashDraftStorageKey());
+    const parsed = raw ? JSON.parse(raw) : [];
+    AppState.messageDrafts = Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    console.warn('Failed to load drafts:', e);
+    AppState.messageDrafts = [];
+  }
+}
+
+function _dashSaveMessageDrafts() {
+  try {
+    localStorage.setItem(_dashDraftStorageKey(), JSON.stringify(AppState.messageDrafts || []));
+  } catch (e) {
+    console.warn('Failed to save drafts:', e);
+  }
+}
+
+// ------------------------------
+// Dashboard compact calendar (dots only)
+// ------------------------------
+function _dashMiniCalendarStylesOnce() {
+  if (document.getElementById('cc-dashboard-mini-calendar-styles')) return;
   const style = document.createElement('style');
-  style.id = 'cc-dashboard-calendar-styles';
+  style.id = 'cc-dashboard-mini-calendar-styles';
   style.textContent = `
-    .cc-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px; }
-    .cc-cal-dow { font-size: 12px; color: var(--text-muted); text-align: center; padding: 6px 0; }
-    .cc-cal-cell { min-height: 120px; border: 1px solid var(--border-subtle); background: var(--bg-secondary); border-radius: 14px; padding: 10px; cursor: pointer; transition: transform .08s ease, border-color .08s ease; }
-    .cc-cal-cell:hover { transform: translateY(-1px); border-color: var(--accent-primary); }
-    .cc-cal-cell.is-other-month { opacity: 0.5; }
-    .cc-cal-cell.is-today { border-color: var(--accent-primary); box-shadow: 0 0 0 3px var(--accent-primary-soft); }
-    .cc-cal-daynum { font-size: 12px; font-weight: 600; display: flex; align-items: center; justify-content: space-between; }
-    .cc-cal-count { font-size: 11px; color: var(--text-muted); }
-    .cc-cal-items { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
-    .cc-cal-item { display: flex; gap: 8px; align-items: flex-start; }
-    .cc-cal-time { font-size: 11px; color: var(--text-muted); min-width: 42px; }
-    .cc-cal-pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border-subtle); background: var(--bg-tertiary); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .cc-cal-pill.pending { border-color: var(--warning); }
-    .cc-cal-pill.sent { border-color: var(--success); }
-    .cc-cal-more { font-size: 11px; color: var(--text-muted); }
+    .cc-mini-wrap { display: flex; flex-direction: column; gap: 12px; }
+    .cc-mini-header { display: flex; justify-content: space-between; align-items: center; }
+    .cc-mini-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; }
+    .cc-mini-dow { font-size: 11px; color: var(--text-muted); text-align: center; padding: 2px 0; }
+
+    .cc-mini-cell {
+      min-height: 44px;
+      border: 1px solid var(--border-subtle);
+      background: var(--bg-secondary);
+      border-radius: 12px;
+      padding: 6px;
+      cursor: pointer;
+      transition: transform .08s ease, border-color .08s ease;
+    }
+    .cc-mini-cell:hover { transform: translateY(-1px); border-color: var(--accent-primary); }
+    .cc-mini-cell.is-other-month { opacity: 0.45; }
+    .cc-mini-cell.is-today { border-color: var(--accent-primary); box-shadow: 0 0 0 3px var(--accent-primary-soft); }
+
+    .cc-mini-top { display: flex; align-items: center; justify-content: space-between; }
+    .cc-mini-daynum { font-size: 12px; font-weight: 600; }
+
+    .cc-mini-dots { display: flex; gap: 4px; align-items: center; justify-content: flex-end; }
+    .cc-mini-dot { width: 7px; height: 7px; border-radius: 999px; }
+    .cc-mini-dot.sent { background: var(--success); }
+    .cc-mini-dot.pending { background: var(--warning); }
+
+    .cc-mini-legend { display: flex; gap: 10px; align-items: center; font-size: 11px; color: var(--text-muted); }
+    .cc-mini-legend .item { display: flex; gap: 6px; align-items: center; }
+    .cc-mini-legend .swatch { width: 8px; height: 8px; border-radius: 999px; }
   `;
   document.head.appendChild(style);
 }
 
-function _dashBuildMonthCells(year, month, messagesByDayKey) {
+function _dashBuildMiniMonthCells(year, month, messagesByDayKey) {
   // Calendar grid: weeks start Sunday
   const firstOfMonth = new Date(year, month, 1);
   const startDow = firstOfMonth.getDay(); // 0=Sun
@@ -141,40 +186,21 @@ function _dashBuildMonthCells(year, month, messagesByDayKey) {
     const todayKey = _dashLocalDateKey(new Date());
     const isToday = key === todayKey;
 
-    const topItems = items.slice(0, 3);
-    const more = items.length - topItems.length;
-
-    const itemsHtml = topItems.map(msg => {
-      const dt = new Date(msg.scheduled_time);
-      const time = `${_dashPad2(dt.getHours())}:${_dashPad2(dt.getMinutes())}`;
-      const statusClass = msg.status === 'sent' ? 'sent' : 'pending';
-      const who = msg.recipient || (msg.target_user_id ? (typeof getRecipientName === 'function' ? getRecipientName(msg.target_user_id) : msg.target_user_id) : '');
-      const preview = msg.message_content ? String(msg.message_content) : '';
-      const label = who ? `${who}: ${preview}` : preview;
-
-      return `
-        <div class="cc-cal-item">
-          <div class="cc-cal-time">${_dashSafe(time)}</div>
-          <div class="cc-cal-pill ${statusClass}" title="${_dashSafe(label)}">${_dashSafe(label)}</div>
-        </div>
-      `;
-    }).join('');
-
-    const countHtml = items.length ? `<span class="cc-cal-count">${items.length} msg</span>` : `<span class="cc-cal-count"></span>`;
+    const hasSent = items.some(m => m && m.status === 'sent');
+    const hasPending = items.some(m => m && m.status !== 'sent');
 
     cells.push(`
       <div
-        class="cc-cal-cell ${isOtherMonth ? 'is-other-month' : ''} ${isToday ? 'is-today' : ''}"
+        class="cc-mini-cell ${isOtherMonth ? 'is-other-month' : ''} ${isToday ? 'is-today' : ''}"
         onclick="dashboardOpenScheduleForDay('${key}')"
-        title="Schedule a message for ${_dashSafe(key)}"
+        title="${items.length ? `${items.length} message(s)` : 'No messages'} — click to schedule"
       >
-        <div class="cc-cal-daynum">
-          <span>${d.getDate()}</span>
-          ${countHtml}
-        </div>
-        <div class="cc-cal-items">
-          ${itemsHtml}
-          ${more > 0 ? `<div class="cc-cal-more">+${more} more</div>` : ''}
+        <div class="cc-mini-top">
+          <div class="cc-mini-daynum">${d.getDate()}</div>
+          <div class="cc-mini-dots">
+            ${hasSent ? `<span class="cc-mini-dot sent" aria-label="sent"></span>` : ''}
+            ${hasPending ? `<span class="cc-mini-dot pending" aria-label="pending"></span>` : ''}
+          </div>
         </div>
       </div>
     `);
@@ -182,6 +208,100 @@ function _dashBuildMonthCells(year, month, messagesByDayKey) {
   return cells.join('');
 }
 
+// ------------------------------
+// Dashboard Quick Schedule (does NOT navigate away)
+// ------------------------------
+function _dashEnsureQuickScheduleDefaultDatetime() {
+  const datetimeInput = document.getElementById('dash-quick-datetime');
+  if (!datetimeInput) return;
+
+  // Only set if empty (don’t fight the user)
+  if (datetimeInput.value) return;
+
+  const now = new Date();
+  now.setHours(now.getHours() + 1);
+  now.setMinutes(0);
+  now.setSeconds(0);
+  now.setMilliseconds(0);
+
+  datetimeInput.value = now.toISOString().slice(0, 16);
+}
+
+function dashboardSaveQuickDraft() {
+  const recipient = document.getElementById('dash-quick-recipient')?.value || '';
+  const message = document.getElementById('dash-quick-message')?.value || '';
+
+  if (!recipient) { showNotification('Please select a recipient', 'warning'); return; }
+  if (!message.trim()) { showNotification('Please enter a message to save', 'warning'); return; }
+
+  _dashLoadMessageDrafts();
+
+  const draft = {
+    id: (typeof generateId === 'function') ? generateId() : String(Date.now()),
+    target_user_id: recipient,
+    message_content: message,
+    created_at: new Date().toISOString()
+  };
+
+  AppState.messageDrafts.unshift(draft);
+  _dashSaveMessageDrafts();
+
+  showNotification('Draft saved', 'success');
+
+  // optional: clear message box (keeps recipient)
+  const msgEl = document.getElementById('dash-quick-message');
+  if (msgEl) msgEl.value = '';
+
+  renderDashboard();
+}
+
+async function dashboardQuickScheduleMessage() {
+  const recipient = document.getElementById('dash-quick-recipient')?.value || '';
+  const message = document.getElementById('dash-quick-message')?.value || '';
+  const datetime = document.getElementById('dash-quick-datetime')?.value || '';
+
+  if (!recipient) { showNotification('Please select a recipient', 'warning'); return; }
+  if (!message.trim()) { showNotification('Please enter a message', 'warning'); return; }
+  if (!datetime) { showNotification('Please select a date and time', 'warning'); return; }
+
+  try {
+    showNotification('Scheduling message.', 'info');
+
+    const selectedChat = (AppState.subscribedChats || []).find(c => String(c.user_id) === String(recipient));
+    const scheduledTimestamp = new Date(datetime).toISOString();
+
+    const serverResponse = await AzureVMAPI.scheduleMessage(recipient, message, scheduledTimestamp, []);
+
+    const serverId = serverResponse?.id || ((typeof generateId === 'function') ? generateId() : String(Date.now()));
+
+    if (!Array.isArray(AppState.scheduledMessages)) AppState.scheduledMessages = [];
+    AppState.scheduledMessages.push({
+      id: serverId,
+      server_id: serverId,
+      recipient: selectedChat?.name || recipient,
+      message_content: message,
+      scheduled_time: scheduledTimestamp,
+      status: 'pending',
+      target_user_id: recipient
+    });
+
+    showNotification('Message scheduled successfully!', 'success');
+
+    const rEl = document.getElementById('dash-quick-recipient');
+    const mEl = document.getElementById('dash-quick-message');
+    if (rEl) rEl.value = '';
+    if (mEl) mEl.value = '';
+
+    renderDashboard();
+  } catch (error) {
+    console.error('Error scheduling message:', error);
+    showNotification('Failed to schedule message: ' + (error?.message || error), 'error');
+  }
+}
+
+// ------------------------------
+// Existing behavior: clicking a day opens full editor prefilled
+// ------------------------------
 function dashboardOpenScheduleForDay(localDateKey /* YYYY-MM-DD */) {
   // Prefill schedule message page with this day at 09:00 local time.
   const [y, m, d] = String(localDateKey).split('-').map(x => parseInt(x, 10));
@@ -193,7 +313,8 @@ function dashboardOpenScheduleForDay(localDateKey /* YYYY-MM-DD */) {
 }
 
 function renderDashboard() {
-  _dashCalendarStylesOnce();
+  _dashMiniCalendarStylesOnce();
+
   const content = document.getElementById('content');
 
   const messages = AppState.scheduledMessages || [];
@@ -205,18 +326,17 @@ function renderDashboard() {
     ? `${new Date(nextPending.scheduled_time).toLocaleString()}`
     : 'No upcoming scheduled messages';
 
-  // Build calendar data for selected month
+  // Build compact calendar data for selected month
   const { year, month } = _dashGetCalendarMonth();
   const monthStart = _dashStartOfDay(new Date(year, month, 1));
   const monthEnd = _dashEndOfDay(new Date(year, month + 1, 0));
 
-  const messagesThisMonth = messages
+  const messagesThisMonth = (messages || [])
     .filter(m => m && m.scheduled_time)
     .map(m => ({ m, t: new Date(m.scheduled_time).getTime() }))
     .filter(x => Number.isFinite(x.t))
     .filter(x => x.t >= monthStart.getTime() && x.t <= monthEnd.getTime())
-    .map(x => x.m)
-    .sort((a, b) => new Date(a.scheduled_time) - new Date(b.scheduled_time));
+    .map(x => x.m);
 
   const byDay = new Map();
   for (const m of messagesThisMonth) {
@@ -226,7 +346,9 @@ function renderDashboard() {
   }
 
   const monthLabel = new Date(year, month, 1).toLocaleString(undefined, { month: 'long', year: 'numeric' });
-  const calendarCells = _dashBuildMonthCells(year, month, byDay);
+  const calendarCells = _dashBuildMiniMonthCells(year, month, byDay);
+
+  const subscribedChats = AppState.subscribedChats || [];
 
   content.innerHTML = `
     <div class="animate-in">
@@ -252,7 +374,9 @@ function renderDashboard() {
         ${_dashStatCard({
           tone: nextPending ? 'purple' : 'blue',
           title: 'Next Message',
-          value: nextPending ? (nextPending.recipient || (nextPending.target_user_id ? (typeof getRecipientName === 'function' ? getRecipientName(nextPending.target_user_id) : nextPending.target_user_id) : 'Scheduled')) : '—',
+          value: nextPending
+            ? (nextPending.recipient || (nextPending.target_user_id ? (typeof getRecipientName === 'function' ? getRecipientName(nextPending.target_user_id) : nextPending.target_user_id) : 'Scheduled'))
+            : '—',
           meta: nextMeta,
           icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                    <circle cx="12" cy="12" r="10"/>
@@ -261,37 +385,112 @@ function renderDashboard() {
         })}
       </div>
 
-      <div class="card">
-        <div class="flex justify-between items-center mb-4">
-          <div>
-            <h3 class="font-semibold">Scheduled Messages Calendar</h3>
-            <p class="text-xs text-muted">Click a day to open the full editor with that date prefilled</p>
+      <div class="grid grid-cols-2 gap-6">
+        <!-- LEFT: Quick Schedule -->
+        <div class="card">
+          <div class="flex items-center gap-3 mb-5">
+            <div class="stat-icon teal" style="width: 40px; height: 40px;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19"/>
+                <line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+            </div>
+            <div>
+              <h3 class="font-semibold">Quick Schedule</h3>
+              <p class="text-xs text-muted">Schedule a message without leaving the dashboard</p>
+            </div>
           </div>
-          <div class="flex gap-2 items-center">
-            <button class="btn btn-secondary btn-sm" onclick="_dashMoveCalendarMonth(-1)">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
-              Prev
+
+          <div class="flex flex-col gap-4">
+            <div class="form-group">
+              <label class="form-label">Recipient</label>
+              <select id="dash-quick-recipient">
+                <option value="">Select a chat.</option>
+                ${(subscribedChats || []).map(chat =>
+                  `<option value="${chat.user_id}" data-chat-id="${chat.chat_id}" data-platform="${chat.platform || 'whatsapp'}">
+                    ${_dashSafe(chat.name || chat.id)}
+                  </option>`
+                ).join('')}
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Message</label>
+              <textarea id="dash-quick-message" rows="4" placeholder="Type your message."></textarea>
+              <div class="flex justify-between mt-2">
+                <span class="text-xs text-muted">Tip: save drafts for recurring messages</span>
+                <button class="btn btn-ghost btn-sm" onclick="dashboardSaveQuickDraft()" title="Save to Recurring Message Drafts">
+                  Save Draft
+                </button>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Schedule For</label>
+              <input type="datetime-local" id="dash-quick-datetime">
+            </div>
+
+            <button class="btn btn-primary w-full" onclick="dashboardQuickScheduleMessage()">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="22" y1="2" x2="11" y2="13"/>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+              </svg>
+              Schedule Message
             </button>
-            <div class="text-sm" style="min-width: 160px; text-align:center;">${_dashSafe(monthLabel)}</div>
-            <button class="btn btn-secondary btn-sm" onclick="_dashMoveCalendarMonth(1)">
-              Next
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+
+            <div class="divider"></div>
+
+            <button class="btn btn-secondary w-full" onclick="navigateTo('scheduleMessage')">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+              </svg>
+              Open Full Editor
             </button>
-            <button class="btn btn-ghost btn-sm" onclick="_dashSetCalendarMonth(new Date().getFullYear(), new Date().getMonth())">Today</button>
           </div>
         </div>
 
-        <div class="divider"></div>
+        <!-- RIGHT: Mini Month Calendar -->
+        <div class="card">
+          <div class="cc-mini-wrap">
+            <div class="cc-mini-header">
+              <div>
+                <h3 class="font-semibold">Calendar</h3>
+                <p class="text-xs text-muted">Green = sent • Orange = pending</p>
+              </div>
+              <div class="flex gap-2 items-center">
+                <button class="btn btn-secondary btn-sm" onclick="_dashMoveCalendarMonth(-1)">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+                  Prev
+                </button>
+                <div class="text-sm" style="min-width: 160px; text-align:center;">${_dashSafe(monthLabel)}</div>
+                <button class="btn btn-secondary btn-sm" onclick="_dashMoveCalendarMonth(1)">
+                  Next
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+                </button>
+                <button class="btn btn-ghost btn-sm" onclick="_dashSetCalendarMonth(new Date().getFullYear(), new Date().getMonth())">Today</button>
+              </div>
+            </div>
 
-        <div class="cc-cal-grid" style="margin-bottom: 10px;">
-          ${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => `<div class="cc-cal-dow">${d}</div>`).join('')}
-        </div>
-        <div class="cc-cal-grid">
-          ${calendarCells}
+            <div class="cc-mini-grid" style="margin-bottom: 4px;">
+              ${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => `<div class="cc-mini-dow">${d}</div>`).join('')}
+            </div>
+
+            <div class="cc-mini-grid">
+              ${calendarCells}
+            </div>
+
+            <div class="cc-mini-legend">
+              <div class="item"><span class="swatch" style="background: var(--success);"></span> Sent</div>
+              <div class="item"><span class="swatch" style="background: var(--warning);"></span> Pending</div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
   `;
+
+  _dashEnsureQuickScheduleDefaultDatetime();
 }
 
 // Export + global handlers used by inline onclick
@@ -300,4 +499,8 @@ if (typeof window !== 'undefined') {
   window.dashboardOpenScheduleForDay = dashboardOpenScheduleForDay;
   window._dashMoveCalendarMonth = _dashMoveCalendarMonth;
   window._dashSetCalendarMonth = _dashSetCalendarMonth;
+
+  // dashboard-only quick schedule
+  window.dashboardSaveQuickDraft = dashboardSaveQuickDraft;
+  window.dashboardQuickScheduleMessage = dashboardQuickScheduleMessage;
 }

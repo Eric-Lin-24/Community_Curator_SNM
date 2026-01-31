@@ -16,6 +16,10 @@ const viewMeta = {
     title: 'Messages',
     subtitle: 'Schedule and manage automated updates.'
   },
+  calendar: {
+    title: 'Calendar',
+    subtitle: 'See scheduled messages by day.'
+  },
   scheduleMessage: {
     title: 'Compose Message',
     subtitle: 'Draft a new update for your community.'
@@ -142,7 +146,7 @@ function renderApp() {
   // Update message badge
   const messageBadge = document.getElementById('message-badge');
   if (messageBadge) {
-    const pendingCount = AppState.scheduledMessages.filter(m => m.status !== 'sent').length;
+    const pendingCount = (AppState.scheduledMessages || []).filter(m => m.status !== 'sent').length;
     if (pendingCount > 0) {
       messageBadge.textContent = pendingCount;
       messageBadge.style.display = 'block';
@@ -161,12 +165,24 @@ function renderApp() {
     case 'dashboard':
       if (typeof renderDashboard === 'function') renderDashboard();
       break;
+
     case 'documents':
       if (typeof renderDocuments === 'function') renderDocuments();
       break;
+
     case 'scheduling':
       if (typeof renderScheduling === 'function') renderScheduling();
       break;
+
+    case 'calendar':
+      if (typeof renderCalendar === 'function') renderCalendar();
+      else {
+        // fallback
+        AppState.currentView = 'dashboard';
+        if (typeof renderDashboard === 'function') renderDashboard();
+      }
+      break;
+
     case 'scheduleMessage':
       if (typeof renderScheduleMessagePage === 'function') {
         renderScheduleMessagePage();
@@ -175,9 +191,11 @@ function renderApp() {
         if (typeof renderScheduling === 'function') renderScheduling();
       }
       break;
+
     case 'settings':
       if (typeof renderSettings === 'function') renderSettings();
       break;
+
     default:
       AppState.currentView = 'dashboard';
       if (typeof renderDashboard === 'function') renderDashboard();
@@ -199,7 +217,6 @@ async function refreshCurrentView() {
       case 'documents': {
         showLoadingOverlay('Syncing documents…');
 
-        // Keep the current source + folder (important for your breadcrumb)
         const src = AppState.activeDocumentSource || 'onedrive';
         const nav = (AppState.documentNav && AppState.documentNav[src])
           ? AppState.documentNav[src]
@@ -220,13 +237,23 @@ async function refreshCurrentView() {
         if (window.AzureVMAPI) {
           await maybeAwait(AzureVMAPI.refreshSubscribedChats);
 
-          // Only call if it exists
           if (typeof AzureVMAPI.syncMessagesFromServer === 'function') {
             await maybeAwait(AzureVMAPI.syncMessagesFromServer);
           }
         }
 
         if (typeof renderScheduling === 'function') renderScheduling();
+        break;
+      }
+
+      case 'calendar': {
+        showLoadingOverlay('Syncing calendar…');
+
+        if (window.AzureVMAPI && typeof AzureVMAPI.syncMessagesFromServer === 'function') {
+          await maybeAwait(AzureVMAPI.syncMessagesFromServer);
+        }
+
+        if (typeof renderCalendar === 'function') renderCalendar();
         break;
       }
 
@@ -251,7 +278,6 @@ async function refreshCurrentView() {
 
         const tasks = [];
 
-        // docs refresh
         if (typeof window.refreshCloudDocs === 'function') {
           const src = AppState.activeDocumentSource || 'onedrive';
           const nav = (AppState.documentNav && AppState.documentNav[src])
@@ -264,7 +290,6 @@ async function refreshCurrentView() {
           })));
         }
 
-        // chats/messages refresh
         if (window.AzureVMAPI && typeof AzureVMAPI.refreshSubscribedChats === 'function') {
           tasks.push(Promise.resolve().then(() => AzureVMAPI.refreshSubscribedChats()));
         }

@@ -276,6 +276,14 @@ function renderScheduleMessagePage() {
     now.setMinutes(0);
     datetimeInput.value = now.toISOString().slice(0, 16);
   }
+  // ✅ If calendar set a prefill datetime, use it once
+  if (AppState.composePrefillDateTimeLocal) {
+    const datetimeInput = document.getElementById('message-datetime');
+    if (datetimeInput) {
+      datetimeInput.value = AppState.composePrefillDateTimeLocal;
+    }
+    AppState.composePrefillDateTimeLocal = null; // one-time use
+  }
 
   // Setup drag and drop
   setupDragAndDrop();

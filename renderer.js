@@ -137,7 +137,7 @@ if (typeof window !== 'undefined') {
  */
 function restoreAppLayout() {
   const appContainer = document.querySelector('.app-layout') || document.querySelector('.app-container') || document.body;
-  
+
   appContainer.innerHTML = `
     <!-- Sidebar -->
     <aside class="sidebar" id="sidebar">
@@ -187,6 +187,15 @@ function restoreAppLayout() {
           <span class="nav-badge" id="message-badge" style="display: none;">0</span>
         </button>
 
+        <button class="nav-item" data-view="calendar" onclick="navigateTo('calendar')">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+            <line x1="16" y1="2" x2="16" y2="6"/>
+            <line x1="8" y1="2" x2="8" y2="6"/>
+            <line x1="3" y1="10" x2="21" y2="10"/>
+          </svg>
+          <span>Calendar</span>
+        </button>
 
         <span class="nav-section-title">System</span>
 
