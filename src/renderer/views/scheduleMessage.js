@@ -294,8 +294,20 @@ async function downloadFileFromGoogleDriveFixed(fileId, fileName, mimeType) {
 function renderScheduleMessagePage() {
   const content = document.getElementById('content');
   const subscribedChats = AppState.subscribedChats || [];
-  selectedLocalFiles = [];
-  selectedRecipients = []; // Reset recipients
+
+  // Restore form state if returning from document selection, otherwise reset
+  const savedState = AppState.schedulerFormState;
+  if (savedState) {
+    selectedLocalFiles = savedState.localFiles || [];
+    selectedRecipients = savedState.recipients || [];
+    // Restore selected days
+    if (savedState.selectedDays && savedState.selectedDays.length > 0) {
+      AppState.selectedScheduleDays = savedState.selectedDays;
+    }
+  } else {
+    selectedLocalFiles = [];
+    selectedRecipients = [];
+  }
 
   content.innerHTML = `
     <div class="animate-slide-up">
@@ -574,6 +586,37 @@ function renderScheduleMessagePage() {
   } catch (e) {
     console.warn('Draft prefill failed:', e);
   }
+
+  // ==========================================================
+  // ✅ RESTORE FORM STATE (when returning from document selection)
+  // ==========================================================
+  try {
+    const savedState = AppState.schedulerFormState;
+    if (savedState) {
+      const messageBox = document.getElementById('message-content');
+      const timeInput = document.getElementById('message-time');
+
+      // Restore message content
+      if (messageBox && savedState.messageContent) {
+        messageBox.value = savedState.messageContent;
+      }
+
+      // Restore time
+      if (timeInput && savedState.time) {
+        timeInput.value = savedState.time;
+      }
+
+      // Render the restored recipients list
+      renderRecipientsList();
+
+      updateCharCount();
+
+      // Clear saved state so it doesn't persist forever
+      AppState.schedulerFormState = null;
+    }
+  } catch (e) {
+    console.warn('Form state restore failed:', e);
+  }
 }
 
 // Character counter
@@ -605,6 +648,18 @@ function removeLocalFile(index) {
 
 // Navigate to documents page for cloud file selection
 function goToDocumentsForSelection() {
+  // Save current form state before navigating away
+  const messageContent = document.getElementById('message-content')?.value || '';
+  const time = document.getElementById('message-time')?.value || '';
+
+  AppState.schedulerFormState = {
+    messageContent,
+    time,
+    recipients: [...selectedRecipients],
+    localFiles: [...selectedLocalFiles],
+    selectedDays: [...(AppState.selectedScheduleDays || [])]
+  };
+
   // Enable file selection mode
   AppState.fileSelectionMode = true;
   AppState.fileSelectionStartedFromDocuments = false; // Coming from scheduler
