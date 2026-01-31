@@ -1,8 +1,9 @@
 // ============================================
-// CALENDAR VIEW (DAY PICKER)
+// CALENDAR VIEW (DAY PICKER + DAY DETAILS MODAL)
 // - Calendar page is now its own thing
 // - Supports "Select days" mode (like Documents select)
-// - Done -> goes to Scheduling with selected days prefilled
+// - Normal mode: click a day -> popup showing that day's messages + delete + schedule button
+// - Done (select mode) -> goes to Scheduling with selected days prefilled
 // ============================================
 
 function ensureCalendarStyles() {
@@ -114,6 +115,165 @@ function ensureCalendarStyles() {
       font-size: 12px;
       color: var(--text-muted);
     }
+
+    /* ---- Day Details Modal ---- */
+    .cal-modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.55);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      padding: 20px;
+    }
+
+    .cal-modal {
+      width: min(720px, 96vw);
+      max-height: 86vh;
+      overflow: auto;
+      background: var(--bg-primary);
+      border: 1px solid var(--border-subtle);
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.45);
+      padding: 16px;
+    }
+
+    .cal-modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .cal-modal-title {
+      font-size: 16px;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    .cal-modal-subtitle {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    .cal-modal-close {
+      border: none;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      cursor: pointer;
+      padding: 8px 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text-primary);
+    }
+
+    .cal-modal-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    .cal-msg-row {
+      border: 1px solid var(--border-subtle);
+      background: var(--bg-secondary);
+      border-radius: 14px;
+      padding: 12px;
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .cal-msg-left {
+      min-width: 0;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .cal-msg-topline {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .cal-pill {
+      font-size: 11px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border-subtle);
+      background: var(--bg-tertiary);
+      color: var(--text-muted);
+      text-transform: lowercase;
+    }
+
+    .cal-pill.sent {
+      border-color: rgba(34,197,94,0.35);
+      background: rgba(34,197,94,0.10);
+      color: var(--success);
+    }
+
+    .cal-pill.pending {
+      border-color: rgba(245,158,11,0.35);
+      background: rgba(245,158,11,0.10);
+      color: var(--warning);
+    }
+
+    .cal-msg-text {
+      font-size: 13px;
+      color: var(--text-primary);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .cal-msg-meta {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .cal-modal-footer {
+      margin-top: 14px;
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+
+    .cal-msg-actions {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+    }
+
+    .cal-icon-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 12px;
+      border: 1px solid var(--border-subtle);
+      background: var(--bg-tertiary);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.12s ease, border-color 0.12s ease;
+    }
+
+    .cal-icon-btn:hover {
+      transform: translateY(-1px);
+      border-color: var(--border-default);
+    }
+
+    .cal-icon-btn.danger {
+      color: var(--error);
+      border-color: rgba(239,68,68,0.35);
+      background: rgba(239,68,68,0.08);
+    }
   `;
   document.head.appendChild(style);
 }
@@ -197,16 +357,12 @@ function _calendarSetSelectedDaysFromSet(set) {
 
 function startDaySelectionMode() {
   AppState.daySelectionMode = true;
-  // Keep whatever was already selected
   if (!Array.isArray(AppState.selectedScheduleDays)) AppState.selectedScheduleDays = [];
   renderCalendar();
 }
 
 function cancelDaySelection() {
   AppState.daySelectionMode = false;
-  // Don’t destroy their selection unless you want to.
-  // If you DO want cancel to clear, uncomment:
-  // AppState.selectedScheduleDays = [];
   renderCalendar();
 }
 
@@ -216,14 +372,209 @@ function confirmDaySelectionAndGo() {
     showNotification('Select at least one day first', 'warning');
     return;
   }
-
-  // Scheduling page (migrated) reuses scheduleMessage.js composer,
-  // which will read AppState.selectedScheduleDays
   AppState.daySelectionMode = false;
   navigateTo('scheduling');
 }
 
-// Click handler for a day cell
+// -------------------------------
+// Day details modal helpers
+// -------------------------------
+function _calEscapeHtml(str = '') {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function _calGetMessagesForDate(dateISO) {
+  const msgs = AppState.scheduledMessages || [];
+  return msgs
+    .filter(m => {
+      const ts = m.scheduled_time || m.scheduled_timestamp;
+      if (!ts) return false;
+      const d = new Date(ts);
+      if (isNaN(d.getTime())) return false;
+      return _calISODateOnly(d) === dateISO;
+    })
+    .sort((a, b) => {
+      const ta = Date.parse(a.scheduled_time || a.scheduled_timestamp || 0) || 0;
+      const tb = Date.parse(b.scheduled_time || b.scheduled_timestamp || 0) || 0;
+      return ta - tb;
+    });
+}
+
+function closeDayDetailsModal() {
+  const el = document.getElementById('cal-day-modal');
+  if (el) el.remove();
+}
+
+function scheduleMessageForDay(dateISO) {
+  AppState.daySelectionMode = false;
+  AppState.selectedScheduleDays = [dateISO];
+  closeDayDetailsModal();
+  navigateTo('scheduling');
+}
+
+async function deleteCalendarMessage(messageId) {
+  const messages = AppState.scheduledMessages || [];
+  const idx = messages.findIndex(m =>
+    String(m.id) === String(messageId) || String(m.server_id) === String(messageId)
+  );
+
+  if (idx < 0) {
+    showNotification('Message not found', 'warning');
+    return;
+  }
+
+  const msg = messages[idx];
+  const serverMessageId = msg.server_id || msg.id;
+
+  try {
+    if (window.AzureVMAPI && typeof AzureVMAPI.deleteMessage === 'function') {
+      await AzureVMAPI.deleteMessage(serverMessageId);
+    }
+
+    messages.splice(idx, 1);
+    AppState.scheduledMessages = messages;
+
+    showNotification('Message deleted', 'success');
+
+    const ts = msg.scheduled_time || msg.scheduled_timestamp;
+    const dayISO = ts ? _calISODateOnly(new Date(ts)) : null;
+    if (dayISO) openDayDetailsModal(dayISO);
+
+    renderCalendar();
+  } catch (error) {
+    console.error('Delete failed:', error);
+
+    const msgText = String(error?.message || error || '');
+    if (msgText.includes('404') || msgText.toLowerCase().includes('not found')) {
+      messages.splice(idx, 1);
+      AppState.scheduledMessages = messages;
+      showNotification('Removed locally (already deleted on server).', 'info');
+
+      const ts = msg.scheduled_time || msg.scheduled_timestamp;
+      const dayISO = ts ? _calISODateOnly(new Date(ts)) : null;
+      if (dayISO) openDayDetailsModal(dayISO);
+
+      renderCalendar();
+      return;
+    }
+
+    showNotification('Failed to delete message', 'error');
+  }
+}
+
+function openDayDetailsModal(dateISO) {
+  closeDayDetailsModal();
+
+  const msgs = _calGetMessagesForDate(dateISO);
+  const title = `Messages for ${dateISO}`;
+  const subtitle = msgs.length
+    ? `${msgs.length} message${msgs.length === 1 ? '' : 's'} scheduled`
+    : `No messages scheduled`;
+
+  const rowsHtml = msgs.length
+    ? msgs.map(m => {
+        const status = (m.status === 'sent') ? 'sent' : 'pending';
+        const text = (m.message_content || m.message || '').trim() || '(no text)';
+        const filesCount = Array.isArray(m.files) ? m.files.length : (Array.isArray(m.attachments) ? m.attachments.length : 0);
+
+        const timeLabel = (() => {
+          const ts = m.scheduled_time || m.scheduled_timestamp;
+          if (!ts) return '';
+          const dt = new Date(ts);
+          if (isNaN(dt.getTime())) return '';
+          return dt.toLocaleString();
+        })();
+
+        const deleteId = String(m.server_id || m.id);
+
+        return `
+          <div class="cal-msg-row">
+            <div class="cal-msg-left">
+              <div class="cal-msg-topline">
+                <span class="cal-pill ${status}">${status}</span>
+                ${timeLabel ? `<span class="cal-msg-meta">${_calEscapeHtml(timeLabel)}</span>` : ''}
+                <span class="cal-msg-meta">• ${filesCount} file${filesCount === 1 ? '' : 's'}</span>
+              </div>
+              <div class="cal-msg-text">${_calEscapeHtml(text)}</div>
+            </div>
+
+            <div class="cal-msg-actions">
+              <button
+                class="cal-icon-btn danger"
+                title="Delete message"
+                onclick="deleteCalendarMessage('${_calEscapeHtml(deleteId)}')"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="3 6 5 6 21 6"/>
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('')
+    : `
+      <div class="text-center py-8 text-muted">
+        <p>No messages found.</p>
+      </div>
+    `;
+
+  const modal = document.createElement('div');
+  modal.id = 'cal-day-modal';
+  modal.className = 'cal-modal-backdrop';
+  modal.innerHTML = `
+    <div class="cal-modal" role="dialog" aria-modal="true" aria-label="${_calEscapeHtml(title)}">
+      <div class="cal-modal-header">
+        <div>
+          <div class="cal-modal-title">${_calEscapeHtml(title)}</div>
+          <div class="cal-modal-subtitle">${_calEscapeHtml(subtitle)}</div>
+        </div>
+        <button class="cal-modal-close" onclick="closeDayDetailsModal()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+          Close
+        </button>
+      </div>
+
+      <div class="cal-modal-list">
+        ${rowsHtml}
+      </div>
+
+      <div class="cal-modal-footer">
+        <button class="btn btn-secondary" onclick="closeDayDetailsModal()">Done</button>
+        <button class="btn btn-primary" onclick="scheduleMessageForDay('${_calEscapeHtml(dateISO)}')">
+          Schedule message for this day
+        </button>
+      </div>
+    </div>
+  `;
+
+  // click outside closes
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) closeDayDetailsModal();
+  });
+
+  // escape closes
+  const onKey = (e) => {
+    if (e.key === 'Escape') {
+      closeDayDetailsModal();
+      document.removeEventListener('keydown', onKey);
+    }
+  };
+  document.addEventListener('keydown', onKey);
+
+  document.body.appendChild(modal);
+}
+
+// -------------------------------
+// Calendar navigation + click handler
+// -------------------------------
 function calendarDayClicked(dateISO) {
   if (AppState.daySelectionMode) {
     const set = _calendarGetSelectedDaysSet();
@@ -234,9 +585,8 @@ function calendarDayClicked(dateISO) {
     return;
   }
 
-  // Not selecting: treat click as "schedule on this day"
-  AppState.selectedScheduleDays = [dateISO];
-  navigateTo('scheduling');
+  // Not selecting: open the day details popup
+  openDayDetailsModal(dateISO);
 }
 
 function calendarGoPrevMonth() {
@@ -257,6 +607,9 @@ function calendarGoToday() {
   renderCalendar();
 }
 
+// -------------------------------
+// Render
+// -------------------------------
 function renderCalendar() {
   ensureCalendarStyles();
 
@@ -282,7 +635,6 @@ function renderCalendar() {
   const isSelectionMode = AppState.daySelectionMode === true;
   const selectedSet = _calendarGetSelectedDaysSet();
 
-  // Selection header like Documents
   const selectionHeader = isSelectionMode ? `
     <div class="mb-4 p-4 rounded-xl" style="background: var(--accent-primary-soft); border: 1px solid var(--accent-primary);">
       <div class="flex items-center justify-between">
@@ -376,20 +728,21 @@ function renderCalendar() {
             const preview = msgs.slice(0, 2).map(m => {
               const status = (m.status === 'sent') ? 'sent' : 'pending';
               const txt = (m.message_content || m.message || '').trim();
-              return `<span class="cal-chip ${status}" title="${txt.replace(/"/g, '&quot;')}">${txt || '(no text)'}</span>`;
+              const safeTitle = _calEscapeHtml(txt);
+              return `<span class="cal-chip ${status}" title="${safeTitle}">${_calEscapeHtml(txt || '(no text)')}</span>`;
             }).join('');
 
             const more = (count > 2) ? `<span class="cal-chip" style="opacity:0.75;">+${count - 2} more</span>` : '';
 
             const hint = isSelectionMode
               ? `Click to ${isSelected ? 'unselect' : 'select'} ${dateISO}`
-              : `Click to schedule for ${dateISO}`;
+              : `Click to view messages for ${dateISO}`;
 
             return `
               <div
                 class="cal-cell ${isOutside ? 'is-outside' : ''} ${isToday ? 'is-today' : ''} ${isSelected ? 'is-selected' : ''}"
                 onclick="calendarDayClicked('${dateISO}')"
-                title="${hint}"
+                title="${_calEscapeHtml(hint)}"
               >
                 <div class="cal-daynum">
                   <span>${d.getDate()}</span>
@@ -425,6 +778,11 @@ if (typeof window !== 'undefined') {
   window.startDaySelectionMode = startDaySelectionMode;
   window.cancelDaySelection = cancelDaySelection;
   window.confirmDaySelectionAndGo = confirmDaySelectionAndGo;
+
+  window.openDayDetailsModal = openDayDetailsModal;
+  window.closeDayDetailsModal = closeDayDetailsModal;
+  window.scheduleMessageForDay = scheduleMessageForDay;
+  window.deleteCalendarMessage = deleteCalendarMessage;
 
   window.calendarDayClicked = calendarDayClicked;
 }
