@@ -6,6 +6,9 @@ const http = require('http');
 const { google } = require('googleapis');
 const fs = require('fs');
 
+// Load environment variables from .env file
+require('dotenv').config();
+
 // ============================================
 // FIX WINDOWS CACHE PERMISSION ERRORS
 // ============================================
@@ -31,7 +34,7 @@ let googleTokens = null;
 // MSAL Configuration with persistent cache
 const msalConfig = {
   auth: {
-    clientId: 'd4769f4f-14be-444b-9934-f859662bc020',
+    clientId: process.env.MICROSOFT_CLIENT_ID || 'd4769f4f-14be-444b-9934-f859662bc020',
     authority: 'https://login.microsoftonline.com/organizations'
   },
   cache: {
@@ -64,10 +67,9 @@ const SCOPES = [
 ];
 
 // Google OAuth Configuration
-// IMPORTANT: Replace these with your actual Google OAuth credentials
-// Get them from: https://console.cloud.google.com/apis/credentials
-const GOOGLE_CLIENT_ID = '811017499008-52eoerm7gjaio44pm94k7n71p37l2tv4.apps.googleusercontent.com';
-const GOOGLE_CLIENT_SECRET = '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';
+// Credentials loaded from .env file - see .env.example
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const GOOGLE_REDIRECT_URI = 'http://localhost:3001';
 const GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/drive.readonly',
