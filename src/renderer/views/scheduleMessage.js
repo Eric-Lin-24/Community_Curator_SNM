@@ -15,6 +15,57 @@ let selectedRecipients = [];
 function _escAttr(str = '') {
   return String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
+function openCalendarDayPicker() {
+  // enter selection mode + keep whatever is already selected
+  AppState.daySelectionMode = true;
+  if (!Array.isArray(AppState.selectedScheduleDays)) AppState.selectedScheduleDays = [];
+  navigateTo('calendar');
+}
+
+function _getSelectedDays() {
+  // Calendar page writes AppState.selectedScheduleDays = ['YYYY-MM-DD', ...]
+  if (!Array.isArray(AppState.selectedScheduleDays)) AppState.selectedScheduleDays = [];
+
+  // If none selected, fall back to "today" so composer isn’t empty
+  if (AppState.selectedScheduleDays.length === 0) {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    AppState.selectedScheduleDays = [`${y}-${m}-${d}`];
+  }
+
+  // Dedup + sort
+  AppState.selectedScheduleDays = Array.from(new Set(AppState.selectedScheduleDays)).sort();
+  return AppState.selectedScheduleDays;
+}
+
+function removeSelectedDay(dateISO) {
+  AppState.selectedScheduleDays = (AppState.selectedScheduleDays || []).filter(d => d !== dateISO);
+  if (AppState.selectedScheduleDays.length === 0) {
+    // keep at least one day
+    _getSelectedDays();
+  }
+  renderScheduleMessagePage();
+}
+
+function _renderSelectedDaysChips() {
+  const days = _getSelectedDays();
+  return `
+    <div class="flex flex-wrap gap-2" style="margin-top: 8px;">
+      ${days.map(d => `
+        <span style="display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;border:1px solid var(--border-subtle);background:var(--bg-tertiary);">
+          <span class="text-sm">${d}</span>
+          <button onclick="removeSelectedDay('${_escAttr(d)}')" style="border:none;background:none;cursor:pointer;color:var(--text-muted);display:flex;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </span>
+      `).join('')}
+    </div>
+  `;
+}
 
 // Toggle recipient selection
 function toggleRecipient(userId, chatId, chatName, platform) {
@@ -69,22 +120,22 @@ function renderRecipientsList() {
 function filterRecipients(searchTerm) {
   const dropdown = document.getElementById('recipient-dropdown');
   if (!dropdown) return;
-  
+
   const subscribedChats = AppState.subscribedChats || [];
   const normalizedSearch = searchTerm.toLowerCase().trim();
-  
+
   // Filter chats based on search term
-  const filteredChats = normalizedSearch === '' 
-    ? subscribedChats 
+  const filteredChats = normalizedSearch === ''
+    ? subscribedChats
     : subscribedChats.filter(chat => {
         const chatName = (chat.name || chat.chat_name || chat.id || '').toLowerCase();
         const platform = (chat.type || chat.platform || '').toLowerCase();
         return chatName.includes(normalizedSearch) || platform.includes(normalizedSearch);
       });
-  
+
   // Show dropdown if there's input or focus
   dropdown.style.display = 'block';
-  
+
   // Re-render the dropdown with filtered results
   renderRecipientDropdown(filteredChats);
 }
@@ -93,16 +144,16 @@ function filterRecipients(searchTerm) {
 function renderRecipientDropdown(chats) {
   const dropdown = document.getElementById('recipient-dropdown');
   if (!dropdown) return;
-  
+
   const subscribedChats = chats || AppState.subscribedChats || [];
-  
+
   dropdown.innerHTML = `
     <!-- Select All / Clear All -->
     <div class="flex justify-between items-center p-2" style="border-bottom: 1px solid var(--border-subtle);">
       <button type="button" class="btn btn-ghost btn-sm" onclick="selectAllRecipients()">Select All</button>
       <button type="button" class="btn btn-ghost btn-sm" onclick="clearAllRecipients()">Clear All</button>
     </div>
-    
+
     <!-- Chat list with checkboxes -->
     ${subscribedChats.length === 0 ? `
       <div class="p-4 text-center text-muted text-sm">No matching chats found</div>
@@ -266,18 +317,18 @@ function renderScheduleMessagePage() {
             <!-- Recipient Selection (Multi-select) -->
             <div class="form-group">
               <label class="form-label">Recipients</label>
-              
+
               <!-- Selected recipients display -->
               <div id="selected-recipients-list" class="flex flex-wrap gap-1 mb-2" style="min-height: 28px;">
                 <span class="text-sm text-muted">No recipients selected</span>
               </div>
-              
+
               <!-- Search input for recipients -->
               <div style="position: relative;">
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   id="recipient-search-input"
-                  class="form-input w-full" 
+                  class="form-input w-full"
                   placeholder="Type to search recipients..."
                   autocomplete="off"
                   oninput="filterRecipients(this.value)"
@@ -288,13 +339,13 @@ function renderScheduleMessagePage() {
                   <circle cx="11" cy="11" r="8"/>
                   <path d="m21 21-4.35-4.35"/>
                 </svg>
-                
+
                 <!-- Dropdown menu -->
                 <div id="recipient-dropdown" style="display: none; position: absolute; top: 100%; left: 0; right: 0; z-index: 50; background: var(--bg-secondary); border: 1px solid var(--border-default); border-radius: 8px; margin-top: 4px; max-height: 250px; overflow-y: auto; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
                   <!-- Content will be rendered by renderRecipientDropdown() -->
                 </div>
               </div>
-              
+
               ${subscribedChats.length === 0 ? `
                 <p class="text-xs text-muted mt-2">
                   No subscribed chats found.
@@ -376,8 +427,21 @@ function renderScheduleMessagePage() {
             <h4 class="font-semibold mb-4">Schedule</h4>
 
             <div class="form-group mb-4">
-              <label class="form-label">Date & Time</label>
-              <input type="datetime-local" id="message-datetime" class="form-input">
+              <div class="flex items-center justify-between">
+                <div>
+                  <label class="form-label">Selected days</label>
+                  <div class="text-xs text-muted">These days will all be scheduled at the same time.</div>
+                </div>
+
+                <button class="btn btn-secondary btn-sm" onclick="openCalendarDayPicker()">
+                  Schedule days
+                </button>
+              </div>
+              ${_renderSelectedDaysChips()}
+              <div class="form-group mb-4" style="margin-top: 14px;">
+                <label class="form-label">Time</label>
+                <input type="time" id="message-time" class="form-input">
+              </div>
             </div>
 
             <div class="flex flex-col gap-2 mb-4">
@@ -449,22 +513,31 @@ function renderScheduleMessagePage() {
     </div>
   `;
 
-  // Set default datetime to now + 1 hour
-  const datetimeInput = document.getElementById('message-datetime');
-  if (datetimeInput) {
-    const now = new Date();
-    now.setHours(now.getHours() + 1);
-    now.setMinutes(0);
-    datetimeInput.value = now.toISOString().slice(0, 16);
-  }
-  // ✅ If calendar set a prefill datetime, use it once
-  if (AppState.composePrefillDateTimeLocal) {
-    const datetimeInput = document.getElementById('message-datetime');
-    if (datetimeInput) {
-      datetimeInput.value = AppState.composePrefillDateTimeLocal;
-    }
-    AppState.composePrefillDateTimeLocal = null; // one-time use
-  }
+ // Default time: next hour
+ const timeInput = document.getElementById('message-time');
+ if (timeInput) {
+   const now = new Date();
+   now.setHours(now.getHours() + 1);
+   now.setMinutes(0);
+   timeInput.value = now.toISOString().slice(11, 16); // HH:MM
+ }
+
+ // If old single-date prefill exists, convert it into selected day + time
+ if (AppState.composePrefillDateTimeLocal) {
+   const v = AppState.composePrefillDateTimeLocal; // "YYYY-MM-DDTHH:MM"
+   const parts = String(v).split('T');
+   if (parts.length === 2) {
+     AppState.selectedScheduleDays = [parts[0]];
+     const t = parts[1].slice(0, 5);
+     const ti = document.getElementById('message-time');
+     if (ti) ti.value = t;
+   }
+   AppState.composePrefillDateTimeLocal = null;
+ }
+
+ // Ensure selected days exist (and dedup/sort)
+ _getSelectedDays();
+
 
   // Setup drag and drop
   setupDragAndDrop();
@@ -668,15 +741,22 @@ function setQuickSchedule(option) {
 // Submit message
 async function submitScheduledMessage() {
   const content = document.getElementById('message-content')?.value || '';
-  const datetime = document.getElementById('message-datetime')?.value || '';
+
+  // ✅ NEW: time-only input (keep quick schedule alone; this is just the main composer)
+  const time = document.getElementById('message-time')?.value || '';
+
+  // ✅ NEW: selected days from calendar
+  const selectedDays = Array.from(new Set(AppState.selectedScheduleDays || [])).sort();
 
   const normalizeSource = (src) => String(src || '').trim().toLowerCase();
 
   // Validate recipients
   if (selectedRecipients.length === 0) { showNotification('Please select at least one recipient', 'warning'); return; }
   if (!content.trim()) { showNotification('Please enter a message', 'warning'); return; }
-  if (!datetime) { showNotification('Please select a schedule time', 'warning'); return; }
 
+  // ✅ NEW: validate time + days
+  if (!time) { showNotification('Please select a time', 'warning'); return; }
+  if (selectedDays.length === 0) { showNotification('Please select at least one day', 'warning'); return; }
 
   try {
     showNotification('Preparing message...', 'info');
@@ -733,48 +813,63 @@ async function submitScheduledMessage() {
     console.log('Downloaded cloud files:', downloadedCloudFiles.length, downloadedCloudFiles.map(f => f.name));
     console.log('Total files:', allFiles.length, allFiles.map(f => ({ name: f.name, size: f.size, type: f.type })));
 
-    showNotification(`Scheduling message to ${selectedRecipients.length} recipient(s)...`, 'info');
+    // ✅ NEW: build timestamps for EACH selected day using LOCAL time
+    const [hh, mm] = String(time).split(':').map(n => parseInt(n, 10));
+    const scheduledTimestamps = selectedDays.map(dateISO => {
+      const [y, m, d] = String(dateISO).split('-').map(n => parseInt(n, 10));
+      const local = new Date(y, (m - 1), d, hh, mm, 0, 0);
+      return local.toISOString();
+    });
 
-    const scheduledTimestamp = new Date(datetime).toISOString();
+    showNotification(
+      `Scheduling message to ${selectedRecipients.length} recipient(s) on ${selectedDays.length} day(s)...`,
+      'info'
+    );
 
-    // Send to all selected recipients
+    // Send to all selected recipients × all selected days
     let successCount = 0;
     let failCount = 0;
 
     for (const recipient of selectedRecipients) {
-      try {
-        await AzureVMAPI.scheduleMessage(recipient.userId, content, scheduledTimestamp, allFiles);
+      for (const scheduledTimestamp of scheduledTimestamps) {
+        try {
+          await AzureVMAPI.scheduleMessage(recipient.userId, content, scheduledTimestamp, allFiles);
 
-        AppState.scheduledMessages = AppState.scheduledMessages || [];
-        AppState.scheduledMessages.push({
-          id: generateId(),
-          recipient: recipient.chatName,
-          message_content: content,
-          scheduled_time: scheduledTimestamp,
-          target_user_id: recipient.userId,
-          status: 'pending',
-          files: allFiles.map(f => ({ name: f.name, size: f.size }))
-        });
+          AppState.scheduledMessages = AppState.scheduledMessages || [];
+          AppState.scheduledMessages.push({
+            id: generateId(),
+            recipient: recipient.chatName,
+            message_content: content,
+            scheduled_time: scheduledTimestamp,
+            target_user_id: recipient.userId,
+            status: 'pending',
+            files: allFiles.map(f => ({ name: f.name, size: f.size }))
+          });
 
-        successCount++;
-      } catch (err) {
-        console.error(`Failed to schedule for ${recipient.chatName}:`, err);
-        failCount++;
+          successCount++;
+        } catch (err) {
+          console.error(`Failed to schedule for ${recipient.chatName} at ${scheduledTimestamp}:`, err);
+          failCount++;
+        }
       }
     }
 
+    const attempted = selectedRecipients.length * scheduledTimestamps.length;
     const fileCountMsg = allFiles.length > 0 ? ` with ${allFiles.length} file(s)` : '';
+
     if (failCount === 0) {
-      showNotification(`Message scheduled to ${successCount} recipient(s)${fileCountMsg}!`, 'success');
+      showNotification(`Scheduled ${successCount}/${attempted}${fileCountMsg}!`, 'success');
     } else {
-      showNotification(`Scheduled to ${successCount}, failed for ${failCount} recipient(s)`, 'warning');
+      showNotification(`Scheduled ${successCount}/${attempted}, failed ${failCount}${fileCountMsg}`, 'warning');
     }
+
     navigateTo('scheduling');
   } catch (error) {
     console.error('Error scheduling message:', error);
-    showNotification('Failed to schedule message: ' + error.message, 'error');
+    showNotification('Failed to schedule message: ' + (error?.message || error), 'error');
   }
 }
+
 
 // ✅ Draft saving for "Recurring Message Drafts"
 function _draftStorageKey() {
@@ -862,15 +957,19 @@ if (typeof window !== 'undefined') {
   window.renderRecipientDropdown = renderRecipientDropdown;
   window.hideRecipientDropdown = hideRecipientDropdown;
   window.showRecipientDropdown = showRecipientDropdown;
+  window.removeSelectedDay = removeSelectedDay;
+  window.openCalendarDayPicker = openCalendarDayPicker;
+
+
 }
 
 // Close dropdown when clicking outside
 document.addEventListener('click', (e) => {
   const searchInput = document.getElementById('recipient-search-input');
   const dropdown = document.getElementById('recipient-dropdown');
-  
-  if (searchInput && dropdown && 
-      !searchInput.contains(e.target) && 
+
+  if (searchInput && dropdown &&
+      !searchInput.contains(e.target) &&
       !dropdown.contains(e.target)) {
     hideRecipientDropdown();
   }
