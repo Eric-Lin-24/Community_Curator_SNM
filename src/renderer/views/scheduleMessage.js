@@ -6,11 +6,168 @@
 // Store selected local files (cloud files are in AppState.selectedCloudFilesForScheduler)
 let selectedLocalFiles = [];
 
+// Store selected recipients (for multi-select)
+let selectedRecipients = [];
+
 // --------------------------------------------
 // Helpers: safe escaping for inline onclick
 // --------------------------------------------
 function _escAttr(str = '') {
   return String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+// Toggle recipient selection
+function toggleRecipient(userId, chatId, chatName, platform) {
+  const index = selectedRecipients.findIndex(r => r.userId === userId);
+  if (index > -1) {
+    selectedRecipients.splice(index, 1);
+  } else {
+    selectedRecipients.push({ userId, chatId, chatName, platform });
+  }
+  renderRecipientsList();
+  // Re-render dropdown to update checkboxes
+  const searchInput = document.getElementById('recipient-search-input');
+  if (searchInput) {
+    filterRecipients(searchInput.value);
+  }
+}
+
+// Remove a recipient from selection
+function removeRecipient(userId) {
+  selectedRecipients = selectedRecipients.filter(r => r.userId !== userId);
+  renderRecipientsList();
+  // Re-render dropdown to update checkboxes
+  const searchInput = document.getElementById('recipient-search-input');
+  if (searchInput) {
+    filterRecipients(searchInput.value);
+  }
+}
+
+// Render selected recipients as tags
+function renderRecipientsList() {
+  const container = document.getElementById('selected-recipients-list');
+  if (!container) return;
+
+  if (selectedRecipients.length === 0) {
+    container.innerHTML = '<span class="text-sm text-muted">No recipients selected</span>';
+    return;
+  }
+
+  container.innerHTML = selectedRecipients.map(r => `
+    <div class="recipient-tag" style="display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; background: var(--accent-primary-soft); border-radius: 16px; margin: 2px;">
+      <span class="text-sm" style="color: var(--accent-primary);">${r.chatName}</span>
+      <button onclick="removeRecipient('${_escAttr(r.userId)}')" style="background: none; border: none; cursor: pointer; padding: 0; display: flex; color: var(--accent-primary);">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+  `).join('');
+}
+
+// Filter recipients based on search input
+function filterRecipients(searchTerm) {
+  const dropdown = document.getElementById('recipient-dropdown');
+  if (!dropdown) return;
+  
+  const subscribedChats = AppState.subscribedChats || [];
+  const normalizedSearch = searchTerm.toLowerCase().trim();
+  
+  // Filter chats based on search term
+  const filteredChats = normalizedSearch === '' 
+    ? subscribedChats 
+    : subscribedChats.filter(chat => {
+        const chatName = (chat.name || chat.chat_name || chat.id || '').toLowerCase();
+        const platform = (chat.type || chat.platform || '').toLowerCase();
+        return chatName.includes(normalizedSearch) || platform.includes(normalizedSearch);
+      });
+  
+  // Show dropdown if there's input or focus
+  dropdown.style.display = 'block';
+  
+  // Re-render the dropdown with filtered results
+  renderRecipientDropdown(filteredChats);
+}
+
+// Render the recipient dropdown with given chats
+function renderRecipientDropdown(chats) {
+  const dropdown = document.getElementById('recipient-dropdown');
+  if (!dropdown) return;
+  
+  const subscribedChats = chats || AppState.subscribedChats || [];
+  
+  dropdown.innerHTML = `
+    <!-- Select All / Clear All -->
+    <div class="flex justify-between items-center p-2" style="border-bottom: 1px solid var(--border-subtle);">
+      <button type="button" class="btn btn-ghost btn-sm" onclick="selectAllRecipients()">Select All</button>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="clearAllRecipients()">Clear All</button>
+    </div>
+    
+    <!-- Chat list with checkboxes -->
+    ${subscribedChats.length === 0 ? `
+      <div class="p-4 text-center text-muted text-sm">No matching chats found</div>
+    ` : subscribedChats.map(chat => {
+      const chatId = chat.id || chat.chat_id;
+      const chatName = chat.name || chat.chat_name || chatId;
+      const userId = chat.user_id || '';
+      const platform = chat.type || chat.platform || 'Group';
+      const isChecked = selectedRecipients.some(r => r.userId === userId);
+      return `
+        <label class="flex items-center gap-3 p-3 cursor-pointer hover:bg-tertiary" style="border-bottom: 1px solid var(--border-subtle);" onclick="event.stopPropagation()">
+          <input type="checkbox" data-user-id="${userId}" data-chat-id="${chatId}" ${isChecked ? 'checked' : ''} onchange="toggleRecipient('${_escAttr(userId)}', '${_escAttr(chatId)}', '${_escAttr(chatName)}', '${_escAttr(platform)}')" style="width: 18px; height: 18px; accent-color: var(--accent-primary);">
+          <div class="flex-1">
+            <div class="text-sm font-medium">${chatName}</div>
+            <div class="text-xs text-muted">${platform}</div>
+          </div>
+        </label>
+      `;
+    }).join('')}
+  `;
+}
+
+// Hide recipient dropdown
+function hideRecipientDropdown() {
+  const dropdown = document.getElementById('recipient-dropdown');
+  if (dropdown) {
+    dropdown.style.display = 'none';
+  }
+}
+
+// Show recipient dropdown
+function showRecipientDropdown() {
+  const dropdown = document.getElementById('recipient-dropdown');
+  if (dropdown) {
+    dropdown.style.display = 'block';
+    renderRecipientDropdown();
+  }
+}
+
+// Select all recipients
+function selectAllRecipients() {
+  const subscribedChats = AppState.subscribedChats || [];
+  selectedRecipients = subscribedChats.map(chat => ({
+    userId: chat.user_id,
+    chatId: chat.id || chat.chat_id,
+    chatName: chat.name || chat.chat_name || chat.id,
+    platform: chat.type || chat.platform || 'Group'
+  }));
+  renderRecipientsList();
+  // Re-render dropdown to update checkboxes
+  const searchInput = document.getElementById('recipient-search-input');
+  if (searchInput) {
+    filterRecipients(searchInput.value);
+  }
+}
+
+// Clear all recipients
+function clearAllRecipients() {
+  selectedRecipients = [];
+  renderRecipientsList();
+  // Re-render dropdown to update checkboxes
+  const searchInput = document.getElementById('recipient-search-input');
+  if (searchInput) {
+    filterRecipients(searchInput.value);
+  }
 }
 
 /**
@@ -87,6 +244,7 @@ function renderScheduleMessagePage() {
   const content = document.getElementById('content');
   const subscribedChats = AppState.subscribedChats || [];
   selectedLocalFiles = [];
+  selectedRecipients = []; // Reset recipients
 
   content.innerHTML = `
     <div class="animate-slide-up">
@@ -105,23 +263,46 @@ function renderScheduleMessagePage() {
           <h3 class="text-lg font-semibold mb-6">Compose Message</h3>
 
           <div class="flex flex-col gap-6">
-            <!-- Recipient Selection -->
+            <!-- Recipient Selection (Multi-select) -->
             <div class="form-group">
-              <label class="form-label">Recipient</label>
-              <select id="message-recipient" class="form-input">
-                <option value="">Select a chat or group...</option>
-                ${subscribedChats.map(chat => {
-                  const chatId = chat.id || chat.chat_id;
-                  const chatName = chat.name || chat.chat_name || chatId;
-                  return `<option value="${chatId}" data-user-id="${chat.user_id || ''}">${chatName} (${chat.type || chat.platform || 'Group'})</option>`;
-                }).join('')}
-              </select>
+              <label class="form-label">Recipients</label>
+              
+              <!-- Selected recipients display -->
+              <div id="selected-recipients-list" class="flex flex-wrap gap-1 mb-2" style="min-height: 28px;">
+                <span class="text-sm text-muted">No recipients selected</span>
+              </div>
+              
+              <!-- Search input for recipients -->
+              <div style="position: relative;">
+                <input 
+                  type="text" 
+                  id="recipient-search-input"
+                  class="form-input w-full" 
+                  placeholder="Type to search recipients..."
+                  autocomplete="off"
+                  oninput="filterRecipients(this.value)"
+                  onfocus="showRecipientDropdown()"
+                  style="padding-right: 32px;"
+                />
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); pointer-events: none; color: var(--text-muted);">
+                  <circle cx="11" cy="11" r="8"/>
+                  <path d="m21 21-4.35-4.35"/>
+                </svg>
+                
+                <!-- Dropdown menu -->
+                <div id="recipient-dropdown" style="display: none; position: absolute; top: 100%; left: 0; right: 0; z-index: 50; background: var(--bg-secondary); border: 1px solid var(--border-default); border-radius: 8px; margin-top: 4px; max-height: 250px; overflow-y: auto; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+                  <!-- Content will be rendered by renderRecipientDropdown() -->
+                </div>
+              </div>
+              
               ${subscribedChats.length === 0 ? `
                 <p class="text-xs text-muted mt-2">
                   No subscribed chats found.
                   <button class="text-accent" style="background: none; border: none; cursor: pointer; text-decoration: underline;" onclick="AzureVMAPI.refreshSubscribedChats()">Refresh chats</button>
                 </p>
-              ` : ''}
+              ` : `
+                <p class="text-xs text-muted mt-2">${subscribedChats.length} chat(s) available</p>
+              `}
             </div>
 
             <!-- Message Content -->
@@ -486,22 +667,16 @@ function setQuickSchedule(option) {
 
 // Submit message
 async function submitScheduledMessage() {
-  const recipientSelect = document.getElementById('message-recipient');
-  const recipientValue = recipientSelect ? recipientSelect.value : '';
   const content = document.getElementById('message-content')?.value || '';
   const datetime = document.getElementById('message-datetime')?.value || '';
 
   const normalizeSource = (src) => String(src || '').trim().toLowerCase();
 
-  if (!recipientValue) { showNotification('Please select a recipient', 'warning'); return; }
+  // Validate recipients
+  if (selectedRecipients.length === 0) { showNotification('Please select at least one recipient', 'warning'); return; }
   if (!content.trim()) { showNotification('Please enter a message', 'warning'); return; }
   if (!datetime) { showNotification('Please select a schedule time', 'warning'); return; }
 
-  const selectedChat = (AppState.subscribedChats || []).find(c => c.id === recipientValue || c.chat_id === recipientValue);
-  if (!selectedChat) { showNotification('Selected chat not found. Please refresh.', 'error'); return; }
-
-  const targetUserId = selectedChat.user_id;
-  if (!targetUserId) { showNotification('Could not determine target user ID.', 'error'); return; }
 
   try {
     showNotification('Preparing message...', 'info');
@@ -558,25 +733,42 @@ async function submitScheduledMessage() {
     console.log('Downloaded cloud files:', downloadedCloudFiles.length, downloadedCloudFiles.map(f => f.name));
     console.log('Total files:', allFiles.length, allFiles.map(f => ({ name: f.name, size: f.size, type: f.type })));
 
-    showNotification('Scheduling message...', 'info');
+    showNotification(`Scheduling message to ${selectedRecipients.length} recipient(s)...`, 'info');
 
     const scheduledTimestamp = new Date(datetime).toISOString();
-    await AzureVMAPI.scheduleMessage(targetUserId, content, scheduledTimestamp, allFiles);
 
-    const chatName = selectedChat.name || selectedChat.chat_name || selectedChat.id;
-    AppState.scheduledMessages = AppState.scheduledMessages || [];
-    AppState.scheduledMessages.push({
-      id: generateId(),
-      recipient: chatName,
-      message_content: content,
-      scheduled_time: scheduledTimestamp,
-      target_user_id: targetUserId,
-      status: 'pending',
-      files: allFiles.map(f => ({ name: f.name, size: f.size }))
-    });
+    // Send to all selected recipients
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const recipient of selectedRecipients) {
+      try {
+        await AzureVMAPI.scheduleMessage(recipient.userId, content, scheduledTimestamp, allFiles);
+
+        AppState.scheduledMessages = AppState.scheduledMessages || [];
+        AppState.scheduledMessages.push({
+          id: generateId(),
+          recipient: recipient.chatName,
+          message_content: content,
+          scheduled_time: scheduledTimestamp,
+          target_user_id: recipient.userId,
+          status: 'pending',
+          files: allFiles.map(f => ({ name: f.name, size: f.size }))
+        });
+
+        successCount++;
+      } catch (err) {
+        console.error(`Failed to schedule for ${recipient.chatName}:`, err);
+        failCount++;
+      }
+    }
 
     const fileCountMsg = allFiles.length > 0 ? ` with ${allFiles.length} file(s)` : '';
-    showNotification(`Message scheduled successfully${fileCountMsg}!`, 'success');
+    if (failCount === 0) {
+      showNotification(`Message scheduled to ${successCount} recipient(s)${fileCountMsg}!`, 'success');
+    } else {
+      showNotification(`Scheduled to ${successCount}, failed for ${failCount} recipient(s)`, 'warning');
+    }
     navigateTo('scheduling');
   } catch (error) {
     console.error('Error scheduling message:', error);
@@ -608,41 +800,41 @@ function _saveDrafts(drafts) {
 }
 
 function saveDraft() {
-  const recipientSelect = document.getElementById('message-recipient');
-  const recipientValue = recipientSelect ? recipientSelect.value : '';
   const message = document.getElementById('message-content')?.value || '';
 
-  if (!recipientValue) { showNotification('Please select a recipient', 'warning'); return; }
+  if (selectedRecipients.length === 0) { showNotification('Please select at least one recipient', 'warning'); return; }
   if (!message.trim()) { showNotification('Please enter a message to save', 'warning'); return; }
 
-  const selectedChat = (AppState.subscribedChats || []).find(c => c.id === recipientValue || c.chat_id === recipientValue);
-  const targetUserId = selectedChat?.user_id;
-
-  if (!targetUserId) {
-    showNotification('Could not determine target user for this recipient', 'error');
-    return;
-  }
-
   const drafts = _loadDrafts();
-  drafts.unshift({
-    id: generateId(),
-    target_user_id: targetUserId,
-    message_content: message,
-    created_at: new Date().toISOString()
-  });
-  _saveDrafts(drafts);
 
-  showNotification('Draft saved', 'success');
+  // Save a draft for each selected recipient
+  selectedRecipients.forEach(recipient => {
+    drafts.unshift({
+      id: generateId(),
+      target_user_id: recipient.userId,
+      message_content: message,
+      created_at: new Date().toISOString()
+    });
+  });
+
+  _saveDrafts(drafts);
+  showNotification(`Draft saved for ${selectedRecipients.length} recipient(s)`, 'success');
 }
 
 function clearForm() {
-  const recipientSelect = document.getElementById('message-recipient');
   const contentTextarea = document.getElementById('message-content');
-  if (recipientSelect) recipientSelect.value = '';
   if (contentTextarea) contentTextarea.value = '';
   selectedLocalFiles = [];
+  selectedRecipients = [];
   AppState.selectedCloudFilesForScheduler = [];
   renderFileList();
+  renderRecipientsList();
+  // Re-render dropdown to update checkboxes
+  const searchInput = document.getElementById('recipient-search-input');
+  if (searchInput) {
+    searchInput.value = '';
+    filterRecipients('');
+  }
   updateCharCount();
   showNotification('Form cleared', 'info');
 }
@@ -660,4 +852,26 @@ if (typeof window !== 'undefined') {
   window.submitScheduledMessage = submitScheduledMessage;
   window.saveDraft = saveDraft;
   window.clearForm = clearForm;
+  // Multi-recipient functions
+  window.toggleRecipient = toggleRecipient;
+  window.removeRecipient = removeRecipient;
+  window.selectAllRecipients = selectAllRecipients;
+  window.clearAllRecipients = clearAllRecipients;
+  window.renderRecipientsList = renderRecipientsList;
+  window.filterRecipients = filterRecipients;
+  window.renderRecipientDropdown = renderRecipientDropdown;
+  window.hideRecipientDropdown = hideRecipientDropdown;
+  window.showRecipientDropdown = showRecipientDropdown;
 }
+
+// Close dropdown when clicking outside
+document.addEventListener('click', (e) => {
+  const searchInput = document.getElementById('recipient-search-input');
+  const dropdown = document.getElementById('recipient-dropdown');
+  
+  if (searchInput && dropdown && 
+      !searchInput.contains(e.target) && 
+      !dropdown.contains(e.target)) {
+    hideRecipientDropdown();
+  }
+});
