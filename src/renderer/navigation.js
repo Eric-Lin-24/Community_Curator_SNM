@@ -184,13 +184,10 @@ function renderApp() {
       break;
 
     case 'scheduleMessage':
-      if (typeof renderScheduleMessagePage === 'function') {
-        renderScheduleMessagePage();
-      } else {
-        AppState.currentView = 'scheduling';
-        if (typeof renderScheduling === 'function') renderScheduling();
-      }
+      AppState.currentView = 'scheduling';
+      if (typeof renderScheduling === 'function') renderScheduling();
       break;
+
 
     case 'settings':
       if (typeof renderSettings === 'function') renderSettings();

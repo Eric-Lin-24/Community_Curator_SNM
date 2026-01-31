@@ -1,183 +1,27 @@
 // ============================================
-// SCHEDULING VIEW
+// SCHEDULING VIEW (MIGRATED)
+// Scheduling page now IS the full composer (formerly scheduleMessage page),
+// with Message Queue + Drafts underneath, then Subscribed Chats.
 // ============================================
 
-// Store selected recipients for quick schedule (multi-select)
-let quickSelectedRecipients = [];
-
-function _draftStorageKey() {
-  // user-scoped drafts
+function schedulingDraftStorageKey() {
   return AppState.userId ? `message_drafts_${AppState.userId}` : 'message_drafts_guest';
 }
 
-// Helper for escaping strings in inline handlers
-function _escAttrScheduling(str = '') {
-  return String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-}
-
-// Toggle recipient in quick schedule
-function toggleQuickRecipient(userId, chatName, platform) {
-  const index = quickSelectedRecipients.findIndex(r => r.userId === userId);
-  if (index > -1) {
-    quickSelectedRecipients.splice(index, 1);
-  } else {
-    quickSelectedRecipients.push({ userId, chatName, platform });
-  }
-  renderQuickRecipientsList();
-  // Re-render dropdown to update checkboxes
-  const searchInput = document.getElementById('quick-recipient-search-input');
-  if (searchInput) {
-    filterQuickRecipients(searchInput.value);
-  }
-}
-
-// Remove a recipient from quick selection
-function removeQuickRecipient(userId) {
-  quickSelectedRecipients = quickSelectedRecipients.filter(r => r.userId !== userId);
-  renderQuickRecipientsList();
-  // Re-render dropdown to update checkboxes
-  const searchInput = document.getElementById('quick-recipient-search-input');
-  if (searchInput) {
-    filterQuickRecipients(searchInput.value);
-  }
-}
-
-// Render selected recipients as tags for quick schedule
-function renderQuickRecipientsList() {
-  const container = document.getElementById('quick-selected-recipients-list');
-  if (!container) return;
-
-  if (quickSelectedRecipients.length === 0) {
-    container.innerHTML = '<span class="text-xs text-muted">No recipients selected</span>';
-    return;
-  }
-
-  container.innerHTML = quickSelectedRecipients.map(r => `
-    <div class="recipient-tag" style="display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; background: var(--accent-primary-soft); border-radius: 12px; margin: 2px;">
-      <span class="text-xs" style="color: var(--accent-primary);">${r.chatName}</span>
-      <button onclick="removeQuickRecipient('${_escAttrScheduling(r.userId)}')" style="background: none; border: none; cursor: pointer; padding: 0; display: flex; color: var(--accent-primary);">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-        </svg>
-      </button>
-    </div>
-  `).join('');
-}
-
-// Filter quick recipients based on search input
-function filterQuickRecipients(searchTerm) {
-  const dropdown = document.getElementById('quick-recipient-dropdown');
-  if (!dropdown) return;
-  
-  const subscribedChats = AppState.subscribedChats || [];
-  const normalizedSearch = searchTerm.toLowerCase().trim();
-  
-  // Filter chats based on search term
-  const filteredChats = normalizedSearch === '' 
-    ? subscribedChats 
-    : subscribedChats.filter(chat => {
-        const chatName = (chat.name || chat.chat_name || chat.id || '').toLowerCase();
-        const platform = (chat.platform || '').toLowerCase();
-        return chatName.includes(normalizedSearch) || platform.includes(normalizedSearch);
-      });
-  
-  // Show dropdown if there's input or focus
-  dropdown.style.display = 'block';
-  
-  // Re-render the dropdown with filtered results
-  renderQuickRecipientDropdown(filteredChats);
-}
-
-// Render the quick recipient dropdown with given chats
-function renderQuickRecipientDropdown(chats) {
-  const dropdown = document.getElementById('quick-recipient-dropdown');
-  if (!dropdown) return;
-  
-  const subscribedChats = chats || AppState.subscribedChats || [];
-  
-  dropdown.innerHTML = `
-    <!-- Select All / Clear All -->
-    <div class="flex justify-between items-center p-2" style="border-bottom: 1px solid var(--border-subtle);">
-      <button type="button" class="btn btn-ghost btn-sm" style="padding: 4px 8px; font-size: 11px;" onclick="selectAllQuickRecipients()">All</button>
-      <button type="button" class="btn btn-ghost btn-sm" style="padding: 4px 8px; font-size: 11px;" onclick="clearAllQuickRecipients()">Clear</button>
-    </div>
-    
-    <!-- Chat list with checkboxes -->
-    ${subscribedChats.length === 0 ? `
-      <div class="p-3 text-center text-muted text-xs">No matching chats found</div>
-    ` : subscribedChats.map(chat => {
-      const chatName = chat.name || chat.chat_name || chat.id;
-      const userId = chat.user_id || '';
-      const platform = chat.platform || 'whatsapp';
-      const isChecked = quickSelectedRecipients.some(r => r.userId === userId);
-      return `
-        <label class="flex items-center gap-2 p-2 cursor-pointer hover:bg-tertiary" style="border-bottom: 1px solid var(--border-subtle);" onclick="event.stopPropagation()">
-          <input type="checkbox" data-user-id="${userId}" ${isChecked ? 'checked' : ''} onchange="toggleQuickRecipient('${_escAttrScheduling(userId)}', '${_escAttrScheduling(chatName)}', '${_escAttrScheduling(platform)}')" style="width: 16px; height: 16px; accent-color: var(--accent-primary);">
-          <span class="text-sm flex-1">${chatName}</span>
-        </label>
-      `;
-    }).join('')}
-  `;
-}
-
-// Hide quick recipient dropdown
-function hideQuickRecipientDropdown() {
-  const dropdown = document.getElementById('quick-recipient-dropdown');
-  if (dropdown) {
-    dropdown.style.display = 'none';
-  }
-}
-
-// Show quick recipient dropdown
-function showQuickRecipientDropdown() {
-  const dropdown = document.getElementById('quick-recipient-dropdown');
-  if (dropdown) {
-    dropdown.style.display = 'block';
-    renderQuickRecipientDropdown();
-  }
-}
-
-// Select all recipients for quick schedule
-function selectAllQuickRecipients() {
-  const subscribedChats = AppState.subscribedChats || [];
-  quickSelectedRecipients = subscribedChats.map(chat => ({
-    userId: chat.user_id,
-    chatName: chat.name || chat.chat_name || chat.id,
-    platform: chat.platform || 'whatsapp'
-  }));
-  renderQuickRecipientsList();
-  // Re-render dropdown to update checkboxes
-  const searchInput = document.getElementById('quick-recipient-search-input');
-  if (searchInput) {
-    filterQuickRecipients(searchInput.value);
-  }
-}
-
-// Clear all quick recipients
-function clearAllQuickRecipients() {
-  quickSelectedRecipients = [];
-  renderQuickRecipientsList();
-  // Re-render dropdown to update checkboxes
-  const searchInput = document.getElementById('quick-recipient-search-input');
-  if (searchInput) {
-    filterQuickRecipients(searchInput.value);
-  }
-}
-
-function loadMessageDrafts() {
+function schedulingLoadDrafts() {
   try {
-    const raw = localStorage.getItem(_draftStorageKey());
+    const raw = localStorage.getItem(schedulingDraftStorageKey());
     const parsed = raw ? JSON.parse(raw) : [];
-    AppState.messageDrafts = Array.isArray(parsed) ? parsed : [];
+    return Array.isArray(parsed) ? parsed : [];
   } catch (e) {
     console.warn('Failed to load drafts:', e);
-    AppState.messageDrafts = [];
+    return [];
   }
 }
 
-function saveMessageDrafts() {
+function schedulingSaveDrafts(drafts) {
   try {
-    localStorage.setItem(_draftStorageKey(), JSON.stringify(AppState.messageDrafts || []));
+    localStorage.setItem(schedulingDraftStorageKey(), JSON.stringify(drafts || []));
   } catch (e) {
     console.warn('Failed to save drafts:', e);
   }
@@ -193,448 +37,269 @@ function getRecipientNameByUserId(userId) {
   return chat?.name || userId || 'Unknown';
 }
 
-function saveQuickDraft() {
-  const message = document.getElementById('quick-message')?.value || '';
-
-  if (quickSelectedRecipients.length === 0) { showNotification('Please select at least one recipient', 'warning'); return; }
-  if (!message.trim()) { showNotification('Please enter a message to save', 'warning'); return; }
-
-  loadMessageDrafts();
-
-  // Save a draft for each selected recipient
-  quickSelectedRecipients.forEach(recipient => {
-    const draft = {
-      id: generateId(),
-      target_user_id: recipient.userId,
-      message_content: message,
-      created_at: new Date().toISOString()
-    };
-    AppState.messageDrafts.unshift(draft);
-  });
-
-  saveMessageDrafts();
-  showNotification(`Draft saved for ${quickSelectedRecipients.length} recipient(s)`, 'success');
-
-  // optional: clear the quick message box
-  document.getElementById('quick-message').value = '';
-  renderScheduling();
-}
-
+// Draft actions (same storage key as composer)
 function deleteDraft(draftId) {
-  loadMessageDrafts();
-  AppState.messageDrafts = (AppState.messageDrafts || []).filter(d => d.id !== draftId);
-  saveMessageDrafts();
+  const drafts = schedulingLoadDrafts().filter(d => d.id !== draftId);
+  schedulingSaveDrafts(drafts);
   showNotification('Draft deleted', 'success');
   renderScheduling();
 }
 
 function openDraft(draftId) {
-  loadMessageDrafts();
-  const draft = (AppState.messageDrafts || []).find(d => d.id === draftId);
+  const drafts = schedulingLoadDrafts();
+  const draft = drafts.find(d => d.id === draftId);
   if (!draft) {
     showNotification('Draft not found', 'error');
     return;
   }
 
+  // scheduleMessage.js already knows how to consume this
   AppState.scheduleMessagePrefill = {
     target_user_id: draft.target_user_id,
     message_content: draft.message_content
   };
 
-  navigateTo('scheduleMessage');
+  renderScheduling();
+  try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch {}
+}
+
+function _safeText(str = '') {
+  return String(str).replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 function renderScheduling() {
   const content = document.getElementById('content');
   const messages = AppState.scheduledMessages || [];
   const subscribedChats = AppState.subscribedChats || [];
-
-  // Load drafts once per render so UI is always accurate
-  loadMessageDrafts();
-  const drafts = AppState.messageDrafts || [];
-
+  const drafts = schedulingLoadDrafts();
   const activeTab = AppState.schedulingActiveTab || 'queue';
 
-  // Reset quick selected recipients on render
-  quickSelectedRecipients = [];
+  // 1) Composer at the top (reuse scheduleMessage.js)
+  if (typeof renderScheduleMessagePage === 'function') {
+    renderScheduleMessagePage();
 
-  content.innerHTML = `
-    <div class="animate-slide-up">
-      <div class="grid grid-cols-3 gap-6">
+    // Remove the "Back to Messages" button (we ARE messages now)
+    try {
+      const backBtn = content.querySelector('button.btn.btn-ghost.mb-6');
+      if (backBtn) backBtn.remove();
+    } catch {}
+  } else {
+    content.innerHTML = `
+      <div class="card">
+        <h3 class="font-semibold mb-2">Composer not loaded</h3>
+        <p class="text-sm text-muted">
+          scheduleMessage.js is not included/loaded, so the message composer can't render.
+          Add it to your script includes and reload.
+        </p>
+      </div>
+    `;
+    return;
+  }
 
-        <!-- LEFT: Quick Schedule -->
-        <div class="card" style="grid-column: span 1;">
-          <div class="flex items-center gap-3 mb-6">
-            <div class="stat-icon teal" style="width: 40px; height: 40px;">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="12" y1="5" x2="12" y2="19"/>
-                <line x1="5" y1="12" x2="19" y2="12"/>
-              </svg>
-            </div>
-            <div>
-              <h3 class="font-semibold">Quick Schedule</h3>
-              <p class="text-xs text-muted">Send to multiple recipients</p>
-            </div>
-          </div>
-
-          <div class="flex flex-col gap-4">
-            <div class="form-group">
-              <label class="form-label">Recipients</label>
-              
-              <!-- Selected recipients display -->
-              <div id="quick-selected-recipients-list" class="flex flex-wrap gap-1 mb-2" style="min-height: 24px;">
-                <span class="text-xs text-muted">No recipients selected</span>
-              </div>
-              
-              <!-- Search input for recipients -->
-              <div style="position: relative;">
-                <input 
-                  type="text" 
-                  id="quick-recipient-search-input"
-                  class="form-input w-full" 
-                  placeholder="Type to search recipients..."
-                  autocomplete="off"
-                  oninput="filterQuickRecipients(this.value)"
-                  onfocus="showQuickRecipientDropdown()"
-                  style="padding: 8px 32px 8px 12px; font-size: 14px;"
-                />
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); pointer-events: none; color: var(--text-muted);">
-                  <circle cx="11" cy="11" r="8"/>
-                  <path d="m21 21-4.35-4.35"/>
-                </svg>
-                
-                <!-- Dropdown menu -->
-                <div id="quick-recipient-dropdown" style="display: none; position: absolute; top: 100%; left: 0; right: 0; z-index: 50; background: var(--bg-secondary); border: 1px solid var(--border-default); border-radius: 8px; margin-top: 4px; max-height: 200px; overflow-y: auto; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
-                  <!-- Content will be rendered by renderQuickRecipientDropdown() -->
-                </div>
-              </div>
-              
-              ${subscribedChats.length === 0 ? `
-                <p class="text-xs text-muted mt-1">
-                  <button class="text-accent" style="background: none; border: none; cursor: pointer; text-decoration: underline;" onclick="AzureVMAPI.refreshSubscribedChats()">Refresh chats</button>
-                </p>
-              ` : ''}
-            </div>
-
-            <div class="form-group">
-              <label class="form-label">Message</label>
-              <textarea id="quick-message" rows="4" placeholder="Type your message."></textarea>
-              <div class="flex justify-between mt-2">
-                <span class="text-xs text-muted">Tip: save drafts for recurring messages</span>
-                <button class="btn btn-ghost btn-sm" onclick="saveQuickDraft()" title="Save to Recurring Message Drafts">
-                  Save Draft
-                </button>
-              </div>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label">Schedule For</label>
-              <input type="datetime-local" id="quick-datetime">
-            </div>
-
-            <button class="btn btn-primary w-full" onclick="quickScheduleMessage()">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="22" y1="2" x2="11" y2="13"/>
-                <polygon points="22 2 15 22 11 13 2 9 22 2"/>
-              </svg>
-              Schedule Message
-            </button>
-
-            <div class="divider"></div>
-
-            <button class="btn btn-secondary w-full" onclick="navigateTo('scheduleMessage')">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-              </svg>
-              Open Full Editor
-            </button>
-          </div>
+  // 2) Messages box underneath (Queue + Drafts)
+  content.insertAdjacentHTML('beforeend', `
+    <div class="card mt-6">
+      <div class="flex justify-between items-center mb-4">
+        <div>
+          <h3 class="font-semibold">Messages</h3>
+          <p class="text-sm text-muted">${messages.length} message${messages.length !== 1 ? 's' : ''} scheduled</p>
         </div>
 
-        <!-- RIGHT: Tabs (Queue / Drafts) -->
-        <div class="card" style="grid-column: span 2;">
-          <div class="flex justify-between items-center mb-4">
-            <div>
-              <h3 class="font-semibold">Messages</h3>
-              <p class="text-sm text-muted">${messages.length} message${messages.length !== 1 ? 's' : ''} scheduled</p>
-            </div>
-            <button class="btn btn-ghost btn-sm" onclick="AzureVMAPI.refreshSubscribedChats()">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="23 4 23 10 17 10"/>
-                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
-              </svg>
-              Refresh
-            </button>
-          </div>
-
-          <!-- Top tab bar -->
-          <div class="flex gap-2 mb-6">
-            <button
-              class="btn ${activeTab === 'queue' ? 'btn-primary' : 'btn-secondary'} btn-sm"
-              onclick="setSchedulingTab('queue')"
-            >
-              Message Queue
-            </button>
-
-            <button
-              class="btn ${activeTab === 'drafts' ? 'btn-primary' : 'btn-secondary'} btn-sm"
-              onclick="setSchedulingTab('drafts')"
-            >
-              Recurring Message Drafts
-            </button>
-          </div>
-
-          ${activeTab === 'drafts' ? `
-            ${drafts.length === 0 ? `
-              <div class="empty-state" style="padding: 48px 24px;">
-                <div class="empty-icon">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                    <polyline points="14 2 14 8 20 8"/>
-                  </svg>
-                </div>
-                <h3>No drafts yet</h3>
-                <p>Write something in Quick Schedule and click <b>Save Draft</b>.</p>
-              </div>
-            ` : `
-              <div class="flex flex-col">
-                ${drafts.map((d, index) => {
-                  const recipientName = getRecipientNameByUserId(d.target_user_id);
-                  return `
-                    <div class="message-item" style="animation: slideUp 0.3s ease ${index * 0.05}s both;">
-                      <div class="message-status pending"></div>
-                      <div class="message-content">
-                        <div class="flex justify-between items-start mb-1">
-                          <span class="message-recipient">${recipientName}</span>
-                          <span class="badge badge-info">draft</span>
-                        </div>
-                        <p class="message-preview">${(d.message_content || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
-                        <span class="text-xs text-muted mt-2">${formatDateTime(d.created_at)}</span>
-                      </div>
-                      <div class="flex gap-2">
-                        <button class="btn btn-ghost btn-sm" onclick="openDraft('${d.id}')">
-                          Open
-                        </button>
-                        <button class="btn-icon" onclick="deleteDraft('${d.id}')" title="Delete" style="color: var(--error);">
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <polyline points="3 6 5 6 21 6"/>
-                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-                          </svg>
-                        </button>
-                      </div>
-                    </div>
-                  `;
-                }).join('')}
-              </div>
-            `}
-          ` : `
-            ${messages.length === 0 ? `
-              <div class="empty-state" style="padding: 48px 24px;">
-                <div class="empty-icon">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                  </svg>
-                </div>
-                <h3>No messages scheduled</h3>
-                <p>Use the quick schedule form or open the full editor.</p>
-              </div>
-            ` : `
-              <div class="flex flex-col">
-                ${messages.map((msg, index) => {
-                  const recipientName = msg.target_user_id
-                    ? getRecipientName(msg.target_user_id)
-                    : (msg.recipient || 'Unknown');
-
-                  return `
-                    <div class="message-item" style="animation: slideUp 0.3s ease ${index * 0.05}s both;">
-                      <div class="message-status ${msg.status === 'sent' ? 'sent' : 'pending'}"></div>
-                      <div class="message-content">
-                        <div class="flex justify-between items-start mb-1">
-                          <span class="message-recipient">${recipientName}</span>
-                          <span class="badge ${msg.status === 'sent' ? 'badge-success' : 'badge-warning'}">${msg.status || 'Pending'}</span>
-                        </div>
-                        <p class="message-preview">${msg.message_content || ''}</p>
-                        <span class="text-xs text-muted mt-2">${formatDateTime(msg.scheduled_time)}</span>
-                      </div>
-                      <div class="flex gap-2">
-                        <button class="btn-icon" onclick="deleteMessage('${msg.id}')" title="Delete" style="color: var(--error);">
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <polyline points="3 6 5 6 21 6"/>
-                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-                          </svg>
-                        </button>
-                      </div>
-                    </div>
-                  `;
-                }).join('')}
-              </div>
-            `}
-          `}
-        </div>
+        <!-- Key fix: refreshCurrentView syncs AND rerenders -->
+        <button class="btn btn-ghost btn-sm" onclick="refreshCurrentView()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="23 4 23 10 17 10"/>
+            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+          </svg>
+          Refresh
+        </button>
       </div>
 
-      <!-- Existing subscribed chats panel (kept as-is) -->
-      <div class="card mt-6">
-        <div class="flex justify-between items-center mb-6">
-          <div>
-            <h3 class="font-semibold">Subscribed Chats</h3>
-            <p class="text-sm text-muted">${subscribedChats.length} active chat${subscribedChats.length !== 1 ? 's' : ''}</p>
-          </div>
-          <button class="btn btn-ghost btn-sm" onclick="AzureVMAPI.refreshSubscribedChats()">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="23 4 23 10 17 10"/>
-              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
-            </svg>
-            Refresh
-          </button>
-        </div>
+      <div class="flex gap-2 mb-6">
+        <button
+          class="btn ${activeTab === 'queue' ? 'btn-primary' : 'btn-secondary'} btn-sm"
+          onclick="setSchedulingTab('queue')"
+        >
+          Message Queue
+        </button>
 
-        ${subscribedChats.length === 0 ? `
-          <div class="text-center py-8 text-muted"><p>No subscribed chats found.</p></div>
+        <button
+          class="btn ${activeTab === 'drafts' ? 'btn-primary' : 'btn-secondary'} btn-sm"
+          onclick="setSchedulingTab('drafts')"
+        >
+          Recurring Message Drafts
+        </button>
+      </div>
+
+      ${activeTab === 'drafts' ? `
+        ${drafts.length === 0 ? `
+          <div class="empty-state" style="padding: 48px 24px;">
+            <div class="empty-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+              </svg>
+            </div>
+            <h3>No drafts yet</h3>
+            <p>Write something in the composer and click <b>Save Draft</b>.</p>
+          </div>
         ` : `
-          <div class="grid grid-cols-3 gap-4">
-            ${subscribedChats.map((chat, index) => `
-              <div class="connection-card" style="animation: slideUp 0.3s ease ${index * 0.05}s both;">
-                <div class="connection-icon whatsapp">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
-                  </svg>
+          <div class="flex flex-col">
+            ${drafts.map((d, index) => {
+              const recipientName = getRecipientNameByUserId(d.target_user_id);
+              return `
+                <div class="message-item" style="animation: slideUp 0.3s ease ${index * 0.05}s both;">
+                  <div class="message-status pending"></div>
+                  <div class="message-content">
+                    <div class="flex justify-between items-start mb-1">
+                      <span class="message-recipient">${_safeText(recipientName)}</span>
+                      <span class="badge badge-info">draft</span>
+                    </div>
+                    <p class="message-preview">${_safeText(d.message_content || '')}</p>
+                    <span class="text-xs text-muted mt-2">${typeof formatDateTime === 'function' ? formatDateTime(d.created_at) : _safeText(d.created_at || '')}</span>
+                  </div>
+                  <div class="flex gap-2">
+                    <button class="btn btn-ghost btn-sm" onclick="openDraft('${d.id}')">Open</button>
+                    <button class="btn-icon" onclick="deleteDraft('${d.id}')" title="Delete" style="color: var(--error);">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="3 6 5 6 21 6"/>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                      </svg>
+                    </button>
+                  </div>
                 </div>
-                <div class="connection-info">
-                  <div class="connection-name">${chat.name || chat.id}</div>
-                  <div class="connection-status">${chat.type || 'Group'} • ${chat.platform || 'WhatsApp'}</div>
-                </div>
-              </div>
-            `).join('')}
+              `;
+            }).join('')}
           </div>
         `}
-      </div>
+      ` : `
+        ${messages.length === 0 ? `
+          <div class="empty-state" style="padding: 48px 24px;">
+            <div class="empty-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+              </svg>
+            </div>
+            <h3>No messages scheduled</h3>
+            <p>Use the composer above to schedule a message.</p>
+          </div>
+        ` : `
+          <div class="flex flex-col">
+            ${messages.map((msg, index) => {
+              const recipientName = msg.target_user_id
+                ? (typeof getRecipientName === 'function' ? getRecipientName(msg.target_user_id) : getRecipientNameByUserId(msg.target_user_id))
+                : (msg.recipient || 'Unknown');
+
+              return `
+                <div class="message-item" style="animation: slideUp 0.3s ease ${index * 0.05}s both;">
+                  <div class="message-status ${msg.status === 'sent' ? 'sent' : 'pending'}"></div>
+                  <div class="message-content">
+                    <div class="flex justify-between items-start mb-1">
+                      <span class="message-recipient">${_safeText(recipientName)}</span>
+                      <span class="badge ${msg.status === 'sent' ? 'badge-success' : 'badge-warning'}">${_safeText(msg.status || 'Pending')}</span>
+                    </div>
+                    <p class="message-preview">${_safeText(msg.message_content || '')}</p>
+                    <span class="text-xs text-muted mt-2">${typeof formatDateTime === 'function' ? formatDateTime(msg.scheduled_time) : _safeText(msg.scheduled_time || '')}</span>
+                  </div>
+                  <div class="flex gap-2">
+                    <button class="btn-icon" onclick="deleteMessage('${msg.id}')" title="Delete" style="color: var(--error);">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="3 6 5 6 21 6"/>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        `}
+      `}
     </div>
-  `;
+  `);
 
-  const datetimeInput = document.getElementById('quick-datetime');
-  if (datetimeInput) {
-    const now = new Date();
-    now.setHours(now.getHours() + 1);
-    now.setMinutes(0);
-    datetimeInput.value = now.toISOString().slice(0, 16);
-  }
-}
+  // 3) Subscribed chats under that
+  content.insertAdjacentHTML('beforeend', `
+    <div class="card mt-6">
+      <div class="flex justify-between items-center mb-6">
+        <div>
+          <h3 class="font-semibold">Subscribed Chats</h3>
+          <p class="text-sm text-muted">${subscribedChats.length} active chat${subscribedChats.length !== 1 ? 's' : ''}</p>
+        </div>
 
-async function quickScheduleMessage() {
-  const message = document.getElementById('quick-message').value;
-  const datetime = document.getElementById('quick-datetime').value;
+        <!-- Key fix: refreshCurrentView syncs AND rerenders -->
+        <button class="btn btn-ghost btn-sm" onclick="refreshCurrentView()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="23 4 23 10 17 10"/>
+            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+          </svg>
+          Refresh
+        </button>
+      </div>
 
-  if (quickSelectedRecipients.length === 0) { showNotification('Please select at least one recipient', 'warning'); return; }
-  if (!message.trim()) { showNotification('Please enter a message', 'warning'); return; }
-  if (!datetime) { showNotification('Please select a date and time', 'warning'); return; }
+      ${subscribedChats.length === 0 ? `
+        <div class="text-center py-8 text-muted"><p>No subscribed chats found.</p></div>
+      ` : `
+        <div class="grid grid-cols-3 gap-4">
+          ${subscribedChats.map((chat, index) => `
+            <div class="connection-card" style="animation: slideUp 0.3s ease ${index * 0.05}s both;">
+              <div class="connection-icon whatsapp">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+                </svg>
+              </div>
+              <div class="connection-info">
+                <div class="connection-name">${_safeText(chat.name || chat.id)}</div>
+                <div class="connection-status">${_safeText(chat.type || 'Group')} • ${_safeText(chat.platform || 'WhatsApp')}</div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `}
+    </div>
+  `);
 
+  // Optional: dashboard day-click prefill (if you use it)
   try {
-    showNotification(`Scheduling message to ${quickSelectedRecipients.length} recipient(s)...`, 'info');
-
-    const scheduledTimestamp = new Date(datetime).toISOString();
-
-    let successCount = 0;
-    let failCount = 0;
-
-    for (const recipient of quickSelectedRecipients) {
-      try {
-        console.log('📤 Sending to Azure VM with target_user_id:', recipient.userId);
-        const serverResponse = await AzureVMAPI.scheduleMessage(recipient.userId, message, scheduledTimestamp, []);
-
-        // Use the server-assigned ID if available
-        const serverId = serverResponse?.id || generateId();
-
-        AppState.scheduledMessages.push({
-          id: serverId,
-          server_id: serverId,
-          recipient: recipient.chatName,
-          message_content: message,
-          scheduled_time: scheduledTimestamp,
-          status: 'pending',
-          target_user_id: recipient.userId
-        });
-
-        successCount++;
-      } catch (err) {
-        console.error(`Failed to schedule for ${recipient.chatName}:`, err);
-        failCount++;
-      }
+    if (AppState.scheduleMessagePrefillISO) {
+      const dt = document.getElementById('message-datetime');
+      if (dt) dt.value = String(AppState.scheduleMessagePrefillISO).slice(0, 16);
+      AppState.scheduleMessagePrefillISO = null;
     }
-
-    if (failCount === 0) {
-      showNotification(`Message scheduled to ${successCount} recipient(s)!`, 'success');
-    } else {
-      showNotification(`Scheduled to ${successCount}, failed for ${failCount} recipient(s)`, 'warning');
-    }
-
-    document.getElementById('quick-message').value = '';
-    quickSelectedRecipients = [];
-
-    renderScheduling();
-  } catch (error) {
-    console.error('Error scheduling message:', error);
-    showNotification('Failed to schedule message: ' + error.message, 'error');
-  }
+  } catch {}
 }
 
 async function deleteMessage(messageId) {
-  const index = AppState.scheduledMessages.findIndex(m => m.id === messageId);
-  if (index > -1) {
-    const message = AppState.scheduledMessages[index];
-    // Use server_id if available, otherwise use the message id
-    const serverMessageId = message.server_id || message.id;
+  const idx = (AppState.scheduledMessages || []).findIndex(m => m.id === messageId);
+  if (idx < 0) return;
 
-    try {
+  const message = AppState.scheduledMessages[idx];
+  const serverMessageId = message.server_id || message.id;
+
+  try {
+    if (window.AzureVMAPI && typeof AzureVMAPI.deleteMessage === 'function') {
       await AzureVMAPI.deleteMessage(serverMessageId);
-      AppState.scheduledMessages.splice(index, 1);
-      showNotification('Message deleted', 'success');
-      renderScheduling();
-    } catch (error) {
-      console.error('Error deleting message:', error);
-      if (error.message && (error.message.includes('404') || error.message.includes('not found'))) {
-        AppState.scheduledMessages.splice(index, 1);
-        showNotification('Message removed (was already processed on server)', 'info');
-        renderScheduling();
-      } else {
-        showNotification('Failed to delete message: ' + error.message, 'error');
-      }
     }
+    AppState.scheduledMessages.splice(idx, 1);
+    showNotification('Message deleted', 'success');
+    renderScheduling();
+  } catch (error) {
+    console.error('Error deleting message:', error);
+    if (error?.message && (error.message.includes('404') || error.message.includes('not found'))) {
+      AppState.scheduledMessages.splice(idx, 1);
+      showNotification('Message removed locally (already deleted on server).', 'info');
+      renderScheduling();
+      return;
+    }
+    showNotification('Failed to delete message: ' + (error?.message || error), 'error');
   }
 }
 
+// Global for inline onclick
 if (typeof window !== 'undefined') {
   window.renderScheduling = renderScheduling;
-  window.quickScheduleMessage = quickScheduleMessage;
-  window.deleteMessage = deleteMessage;
-
-  // drafts
-  window.saveQuickDraft = saveQuickDraft;
-  window.deleteDraft = deleteDraft;
-  window.openDraft = openDraft;
   window.setSchedulingTab = setSchedulingTab;
-
-  // Multi-recipient functions for quick schedule
-  window.toggleQuickRecipient = toggleQuickRecipient;
-  window.removeQuickRecipient = removeQuickRecipient;
-  window.selectAllQuickRecipients = selectAllQuickRecipients;
-  window.clearAllQuickRecipients = clearAllQuickRecipients;
-  window.renderQuickRecipientsList = renderQuickRecipientsList;
-  window.filterQuickRecipients = filterQuickRecipients;
-  window.renderQuickRecipientDropdown = renderQuickRecipientDropdown;
-  window.hideQuickRecipientDropdown = hideQuickRecipientDropdown;
-  window.showQuickRecipientDropdown = showQuickRecipientDropdown;
+  window.openDraft = openDraft;
+  window.deleteDraft = deleteDraft;
+  window.deleteMessage = deleteMessage;
 }
-
-// Close dropdown when clicking outside
-document.addEventListener('click', (e) => {
-  const searchInput = document.getElementById('quick-recipient-search-input');
-  const dropdown = document.getElementById('quick-recipient-dropdown');
-  
-  if (searchInput && dropdown && 
-      !searchInput.contains(e.target) && 
-      !dropdown.contains(e.target)) {
-    hideQuickRecipientDropdown();
-  }
-});
