@@ -740,27 +740,31 @@ async function submitScheduledMessage() {
     // Send to all selected recipients
     let successCount = 0;
     let failCount = 0;
+    const successfulRecipients = [];
 
     for (const recipient of selectedRecipients) {
       try {
         await AzureVMAPI.scheduleMessage(recipient.userId, content, scheduledTimestamp, allFiles);
-
-        AppState.scheduledMessages = AppState.scheduledMessages || [];
-        AppState.scheduledMessages.push({
-          id: generateId(),
-          recipient: recipient.chatName,
-          message_content: content,
-          scheduled_time: scheduledTimestamp,
-          target_user_id: recipient.userId,
-          status: 'pending',
-          files: allFiles.map(f => ({ name: f.name, size: f.size }))
-        });
-
+        successfulRecipients.push(recipient);
         successCount++;
       } catch (err) {
         console.error(`Failed to schedule for ${recipient.chatName}:`, err);
         failCount++;
       }
+    }
+
+    // Add a single bundled message entry with all successful recipients
+    if (successfulRecipients.length > 0) {
+      AppState.scheduledMessages = AppState.scheduledMessages || [];
+      AppState.scheduledMessages.push({
+        id: generateId(),
+        recipients: successfulRecipients.map(r => r.chatName),
+        target_user_ids: successfulRecipients.map(r => r.userId),
+        message_content: content,
+        scheduled_time: scheduledTimestamp,
+        status: 'pending',
+        files: allFiles.map(f => ({ name: f.name, size: f.size }))
+      });
     }
 
     const fileCountMsg = allFiles.length > 0 ? ` with ${allFiles.length} file(s)` : '';

@@ -186,16 +186,35 @@ function renderScheduling() {
         ` : `
           <div class="flex flex-col">
             ${messages.map((msg, index) => {
-              const recipientName = msg.target_user_id
-                ? (typeof getRecipientName === 'function' ? getRecipientName(msg.target_user_id) : getRecipientNameByUserId(msg.target_user_id))
-                : (msg.recipient || 'Unknown');
+              // Handle both old single-recipient and new multi-recipient format
+              let recipientDisplay = '';
+              if (msg.recipients && Array.isArray(msg.recipients)) {
+                // New bundled format
+                recipientDisplay = msg.recipients.join(', ');
+              } else if (msg.target_user_id) {
+                // Old single recipient format
+                recipientDisplay = typeof getRecipientName === 'function' 
+                  ? getRecipientName(msg.target_user_id) 
+                  : getRecipientNameByUserId(msg.target_user_id);
+              } else {
+                recipientDisplay = msg.recipient || 'Unknown';
+              }
+              
+              const hasAttachments = msg.files && Array.isArray(msg.files) && msg.files.length > 0;
 
               return `
                 <div class="message-item" style="animation: slideUp 0.3s ease ${index * 0.05}s both;">
                   <div class="message-status ${msg.status === 'sent' ? 'sent' : 'pending'}"></div>
                   <div class="message-content">
                     <div class="flex justify-between items-start mb-1">
-                      <span class="message-recipient">${_safeText(recipientName)}</span>
+                      <div class="flex items-center gap-2">
+                        <span class="message-recipient">${_safeText(recipientDisplay)}</span>
+                        ${hasAttachments ? `
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" title="${msg.files.length} attachment(s)" style="opacity: 0.6;">
+                            <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+                          </svg>
+                        ` : ''}
+                      </div>
                       <span class="badge ${msg.status === 'sent' ? 'badge-success' : 'badge-warning'}">${_safeText(msg.status || 'Pending')}</span>
                     </div>
                     <p class="message-preview">${_safeText(msg.message_content || '')}</p>
