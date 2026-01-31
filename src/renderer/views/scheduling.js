@@ -24,23 +24,22 @@ function toggleQuickRecipient(userId, chatName, platform) {
     quickSelectedRecipients.push({ userId, chatName, platform });
   }
   renderQuickRecipientsList();
-  updateQuickRecipientCheckboxes();
+  // Re-render dropdown to update checkboxes
+  const searchInput = document.getElementById('quick-recipient-search-input');
+  if (searchInput) {
+    filterQuickRecipients(searchInput.value);
+  }
 }
 
 // Remove a recipient from quick selection
 function removeQuickRecipient(userId) {
   quickSelectedRecipients = quickSelectedRecipients.filter(r => r.userId !== userId);
   renderQuickRecipientsList();
-  updateQuickRecipientCheckboxes();
-}
-
-// Update checkbox states in the quick dropdown
-function updateQuickRecipientCheckboxes() {
-  const allCheckboxes = document.querySelectorAll('#quick-recipient-dropdown input[type="checkbox"]');
-  allCheckboxes.forEach(cb => {
-    const userId = cb.dataset.userId;
-    cb.checked = quickSelectedRecipients.some(r => r.userId === userId);
-  });
+  // Re-render dropdown to update checkboxes
+  const searchInput = document.getElementById('quick-recipient-search-input');
+  if (searchInput) {
+    filterQuickRecipients(searchInput.value);
+  }
 }
 
 // Render selected recipients as tags for quick schedule
@@ -65,11 +64,76 @@ function renderQuickRecipientsList() {
   `).join('');
 }
 
-// Toggle quick recipient dropdown visibility
-function toggleQuickRecipientDropdown() {
+// Filter quick recipients based on search input
+function filterQuickRecipients(searchTerm) {
+  const dropdown = document.getElementById('quick-recipient-dropdown');
+  if (!dropdown) return;
+  
+  const subscribedChats = AppState.subscribedChats || [];
+  const normalizedSearch = searchTerm.toLowerCase().trim();
+  
+  // Filter chats based on search term
+  const filteredChats = normalizedSearch === '' 
+    ? subscribedChats 
+    : subscribedChats.filter(chat => {
+        const chatName = (chat.name || chat.chat_name || chat.id || '').toLowerCase();
+        const platform = (chat.platform || '').toLowerCase();
+        return chatName.includes(normalizedSearch) || platform.includes(normalizedSearch);
+      });
+  
+  // Show dropdown if there's input or focus
+  dropdown.style.display = 'block';
+  
+  // Re-render the dropdown with filtered results
+  renderQuickRecipientDropdown(filteredChats);
+}
+
+// Render the quick recipient dropdown with given chats
+function renderQuickRecipientDropdown(chats) {
+  const dropdown = document.getElementById('quick-recipient-dropdown');
+  if (!dropdown) return;
+  
+  const subscribedChats = chats || AppState.subscribedChats || [];
+  
+  dropdown.innerHTML = `
+    <!-- Select All / Clear All -->
+    <div class="flex justify-between items-center p-2" style="border-bottom: 1px solid var(--border-subtle);">
+      <button type="button" class="btn btn-ghost btn-sm" style="padding: 4px 8px; font-size: 11px;" onclick="selectAllQuickRecipients()">All</button>
+      <button type="button" class="btn btn-ghost btn-sm" style="padding: 4px 8px; font-size: 11px;" onclick="clearAllQuickRecipients()">Clear</button>
+    </div>
+    
+    <!-- Chat list with checkboxes -->
+    ${subscribedChats.length === 0 ? `
+      <div class="p-3 text-center text-muted text-xs">No matching chats found</div>
+    ` : subscribedChats.map(chat => {
+      const chatName = chat.name || chat.chat_name || chat.id;
+      const userId = chat.user_id || '';
+      const platform = chat.platform || 'whatsapp';
+      const isChecked = quickSelectedRecipients.some(r => r.userId === userId);
+      return `
+        <label class="flex items-center gap-2 p-2 cursor-pointer hover:bg-tertiary" style="border-bottom: 1px solid var(--border-subtle);" onclick="event.stopPropagation()">
+          <input type="checkbox" data-user-id="${userId}" ${isChecked ? 'checked' : ''} onchange="toggleQuickRecipient('${_escAttrScheduling(userId)}', '${_escAttrScheduling(chatName)}', '${_escAttrScheduling(platform)}')" style="width: 16px; height: 16px; accent-color: var(--accent-primary);">
+          <span class="text-sm flex-1">${chatName}</span>
+        </label>
+      `;
+    }).join('')}
+  `;
+}
+
+// Hide quick recipient dropdown
+function hideQuickRecipientDropdown() {
   const dropdown = document.getElementById('quick-recipient-dropdown');
   if (dropdown) {
-    dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+    dropdown.style.display = 'none';
+  }
+}
+
+// Show quick recipient dropdown
+function showQuickRecipientDropdown() {
+  const dropdown = document.getElementById('quick-recipient-dropdown');
+  if (dropdown) {
+    dropdown.style.display = 'block';
+    renderQuickRecipientDropdown();
   }
 }
 
@@ -82,14 +146,22 @@ function selectAllQuickRecipients() {
     platform: chat.platform || 'whatsapp'
   }));
   renderQuickRecipientsList();
-  updateQuickRecipientCheckboxes();
+  // Re-render dropdown to update checkboxes
+  const searchInput = document.getElementById('quick-recipient-search-input');
+  if (searchInput) {
+    filterQuickRecipients(searchInput.value);
+  }
 }
 
 // Clear all quick recipients
 function clearAllQuickRecipients() {
   quickSelectedRecipients = [];
   renderQuickRecipientsList();
-  updateQuickRecipientCheckboxes();
+  // Re-render dropdown to update checkboxes
+  const searchInput = document.getElementById('quick-recipient-search-input');
+  if (searchInput) {
+    filterQuickRecipients(searchInput.value);
+  }
 }
 
 function loadMessageDrafts() {
@@ -214,37 +286,26 @@ function renderScheduling() {
                 <span class="text-xs text-muted">No recipients selected</span>
               </div>
               
-              <!-- Dropdown trigger -->
+              <!-- Search input for recipients -->
               <div style="position: relative;">
-                <button type="button" class="form-input w-full text-left flex justify-between items-center" onclick="toggleQuickRecipientDropdown()" style="cursor: pointer; padding: 8px 12px;">
-                  <span class="text-muted text-sm">Select recipients...</span>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polyline points="6 9 12 15 18 9"/>
-                  </svg>
-                </button>
+                <input 
+                  type="text" 
+                  id="quick-recipient-search-input"
+                  class="form-input w-full" 
+                  placeholder="Type to search recipients..."
+                  autocomplete="off"
+                  oninput="filterQuickRecipients(this.value)"
+                  onfocus="showQuickRecipientDropdown()"
+                  style="padding: 8px 32px 8px 12px; font-size: 14px;"
+                />
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); pointer-events: none; color: var(--text-muted);">
+                  <circle cx="11" cy="11" r="8"/>
+                  <path d="m21 21-4.35-4.35"/>
+                </svg>
                 
                 <!-- Dropdown menu -->
                 <div id="quick-recipient-dropdown" style="display: none; position: absolute; top: 100%; left: 0; right: 0; z-index: 50; background: var(--bg-secondary); border: 1px solid var(--border-default); border-radius: 8px; margin-top: 4px; max-height: 200px; overflow-y: auto; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
-                  <!-- Select All / Clear All -->
-                  <div class="flex justify-between items-center p-2" style="border-bottom: 1px solid var(--border-subtle);">
-                    <button type="button" class="btn btn-ghost btn-sm" style="padding: 4px 8px; font-size: 11px;" onclick="selectAllQuickRecipients()">All</button>
-                    <button type="button" class="btn btn-ghost btn-sm" style="padding: 4px 8px; font-size: 11px;" onclick="clearAllQuickRecipients()">Clear</button>
-                  </div>
-                  
-                  <!-- Chat list with checkboxes -->
-                  ${subscribedChats.length === 0 ? `
-                    <div class="p-3 text-center text-muted text-xs">No chats available</div>
-                  ` : subscribedChats.map(chat => {
-                    const chatName = chat.name || chat.chat_name || chat.id;
-                    const userId = chat.user_id || '';
-                    const platform = chat.platform || 'whatsapp';
-                    return `
-                      <label class="flex items-center gap-2 p-2 cursor-pointer hover:bg-tertiary" style="border-bottom: 1px solid var(--border-subtle);" onclick="event.stopPropagation()">
-                        <input type="checkbox" data-user-id="${userId}" onchange="toggleQuickRecipient('${_escAttrScheduling(userId)}', '${_escAttrScheduling(chatName)}', '${_escAttrScheduling(platform)}')" style="width: 16px; height: 16px; accent-color: var(--accent-primary);">
-                        <span class="text-sm flex-1">${chatName}</span>
-                      </label>
-                    `;
-                  }).join('')}
+                  <!-- Content will be rendered by renderQuickRecipientDropdown() -->
                 </div>
               </div>
               
@@ -557,8 +618,23 @@ if (typeof window !== 'undefined') {
   // Multi-recipient functions for quick schedule
   window.toggleQuickRecipient = toggleQuickRecipient;
   window.removeQuickRecipient = removeQuickRecipient;
-  window.toggleQuickRecipientDropdown = toggleQuickRecipientDropdown;
   window.selectAllQuickRecipients = selectAllQuickRecipients;
   window.clearAllQuickRecipients = clearAllQuickRecipients;
   window.renderQuickRecipientsList = renderQuickRecipientsList;
+  window.filterQuickRecipients = filterQuickRecipients;
+  window.renderQuickRecipientDropdown = renderQuickRecipientDropdown;
+  window.hideQuickRecipientDropdown = hideQuickRecipientDropdown;
+  window.showQuickRecipientDropdown = showQuickRecipientDropdown;
 }
+
+// Close dropdown when clicking outside
+document.addEventListener('click', (e) => {
+  const searchInput = document.getElementById('quick-recipient-search-input');
+  const dropdown = document.getElementById('quick-recipient-dropdown');
+  
+  if (searchInput && dropdown && 
+      !searchInput.contains(e.target) && 
+      !dropdown.contains(e.target)) {
+    hideQuickRecipientDropdown();
+  }
+});

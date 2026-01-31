@@ -25,29 +25,22 @@ function toggleRecipient(userId, chatId, chatName, platform) {
     selectedRecipients.push({ userId, chatId, chatName, platform });
   }
   renderRecipientsList();
-  updateRecipientCheckboxes();
+  // Re-render dropdown to update checkboxes
+  const searchInput = document.getElementById('recipient-search-input');
+  if (searchInput) {
+    filterRecipients(searchInput.value);
+  }
 }
 
 // Remove a recipient from selection
 function removeRecipient(userId) {
   selectedRecipients = selectedRecipients.filter(r => r.userId !== userId);
   renderRecipientsList();
-  updateRecipientCheckboxes();
-}
-
-// Update checkbox states in the dropdown
-function updateRecipientCheckboxes() {
-  selectedRecipients.forEach(r => {
-    const checkbox = document.querySelector(`input[data-user-id="${r.userId}"]`);
-    if (checkbox) checkbox.checked = true;
-  });
-
-  // Also update unselected ones
-  const allCheckboxes = document.querySelectorAll('#recipient-dropdown input[type="checkbox"]');
-  allCheckboxes.forEach(cb => {
-    const userId = cb.dataset.userId;
-    cb.checked = selectedRecipients.some(r => r.userId === userId);
-  });
+  // Re-render dropdown to update checkboxes
+  const searchInput = document.getElementById('recipient-search-input');
+  if (searchInput) {
+    filterRecipients(searchInput.value);
+  }
 }
 
 // Render selected recipients as tags
@@ -72,11 +65,80 @@ function renderRecipientsList() {
   `).join('');
 }
 
-// Toggle recipient dropdown visibility
-function toggleRecipientDropdown() {
+// Filter recipients based on search input
+function filterRecipients(searchTerm) {
+  const dropdown = document.getElementById('recipient-dropdown');
+  if (!dropdown) return;
+  
+  const subscribedChats = AppState.subscribedChats || [];
+  const normalizedSearch = searchTerm.toLowerCase().trim();
+  
+  // Filter chats based on search term
+  const filteredChats = normalizedSearch === '' 
+    ? subscribedChats 
+    : subscribedChats.filter(chat => {
+        const chatName = (chat.name || chat.chat_name || chat.id || '').toLowerCase();
+        const platform = (chat.type || chat.platform || '').toLowerCase();
+        return chatName.includes(normalizedSearch) || platform.includes(normalizedSearch);
+      });
+  
+  // Show dropdown if there's input or focus
+  dropdown.style.display = 'block';
+  
+  // Re-render the dropdown with filtered results
+  renderRecipientDropdown(filteredChats);
+}
+
+// Render the recipient dropdown with given chats
+function renderRecipientDropdown(chats) {
+  const dropdown = document.getElementById('recipient-dropdown');
+  if (!dropdown) return;
+  
+  const subscribedChats = chats || AppState.subscribedChats || [];
+  
+  dropdown.innerHTML = `
+    <!-- Select All / Clear All -->
+    <div class="flex justify-between items-center p-2" style="border-bottom: 1px solid var(--border-subtle);">
+      <button type="button" class="btn btn-ghost btn-sm" onclick="selectAllRecipients()">Select All</button>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="clearAllRecipients()">Clear All</button>
+    </div>
+    
+    <!-- Chat list with checkboxes -->
+    ${subscribedChats.length === 0 ? `
+      <div class="p-4 text-center text-muted text-sm">No matching chats found</div>
+    ` : subscribedChats.map(chat => {
+      const chatId = chat.id || chat.chat_id;
+      const chatName = chat.name || chat.chat_name || chatId;
+      const userId = chat.user_id || '';
+      const platform = chat.type || chat.platform || 'Group';
+      const isChecked = selectedRecipients.some(r => r.userId === userId);
+      return `
+        <label class="flex items-center gap-3 p-3 cursor-pointer hover:bg-tertiary" style="border-bottom: 1px solid var(--border-subtle);" onclick="event.stopPropagation()">
+          <input type="checkbox" data-user-id="${userId}" data-chat-id="${chatId}" ${isChecked ? 'checked' : ''} onchange="toggleRecipient('${_escAttr(userId)}', '${_escAttr(chatId)}', '${_escAttr(chatName)}', '${_escAttr(platform)}')" style="width: 18px; height: 18px; accent-color: var(--accent-primary);">
+          <div class="flex-1">
+            <div class="text-sm font-medium">${chatName}</div>
+            <div class="text-xs text-muted">${platform}</div>
+          </div>
+        </label>
+      `;
+    }).join('')}
+  `;
+}
+
+// Hide recipient dropdown
+function hideRecipientDropdown() {
   const dropdown = document.getElementById('recipient-dropdown');
   if (dropdown) {
-    dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+    dropdown.style.display = 'none';
+  }
+}
+
+// Show recipient dropdown
+function showRecipientDropdown() {
+  const dropdown = document.getElementById('recipient-dropdown');
+  if (dropdown) {
+    dropdown.style.display = 'block';
+    renderRecipientDropdown();
   }
 }
 
@@ -90,14 +152,22 @@ function selectAllRecipients() {
     platform: chat.type || chat.platform || 'Group'
   }));
   renderRecipientsList();
-  updateRecipientCheckboxes();
+  // Re-render dropdown to update checkboxes
+  const searchInput = document.getElementById('recipient-search-input');
+  if (searchInput) {
+    filterRecipients(searchInput.value);
+  }
 }
 
 // Clear all recipients
 function clearAllRecipients() {
   selectedRecipients = [];
   renderRecipientsList();
-  updateRecipientCheckboxes();
+  // Re-render dropdown to update checkboxes
+  const searchInput = document.getElementById('recipient-search-input');
+  if (searchInput) {
+    filterRecipients(searchInput.value);
+  }
 }
 
 /**
@@ -202,41 +272,26 @@ function renderScheduleMessagePage() {
                 <span class="text-sm text-muted">No recipients selected</span>
               </div>
               
-              <!-- Dropdown trigger -->
+              <!-- Search input for recipients -->
               <div style="position: relative;">
-                <button type="button" class="form-input w-full text-left flex justify-between items-center" onclick="toggleRecipientDropdown()" style="cursor: pointer;">
-                  <span class="text-muted">Select recipients...</span>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polyline points="6 9 12 15 18 9"/>
-                  </svg>
-                </button>
+                <input 
+                  type="text" 
+                  id="recipient-search-input"
+                  class="form-input w-full" 
+                  placeholder="Type to search recipients..."
+                  autocomplete="off"
+                  oninput="filterRecipients(this.value)"
+                  onfocus="showRecipientDropdown()"
+                  style="padding-right: 32px;"
+                />
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); pointer-events: none; color: var(--text-muted);">
+                  <circle cx="11" cy="11" r="8"/>
+                  <path d="m21 21-4.35-4.35"/>
+                </svg>
                 
                 <!-- Dropdown menu -->
                 <div id="recipient-dropdown" style="display: none; position: absolute; top: 100%; left: 0; right: 0; z-index: 50; background: var(--bg-secondary); border: 1px solid var(--border-default); border-radius: 8px; margin-top: 4px; max-height: 250px; overflow-y: auto; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
-                  <!-- Select All / Clear All -->
-                  <div class="flex justify-between items-center p-2" style="border-bottom: 1px solid var(--border-subtle);">
-                    <button type="button" class="btn btn-ghost btn-sm" onclick="selectAllRecipients()">Select All</button>
-                    <button type="button" class="btn btn-ghost btn-sm" onclick="clearAllRecipients()">Clear All</button>
-                  </div>
-                  
-                  <!-- Chat list with checkboxes -->
-                  ${subscribedChats.length === 0 ? `
-                    <div class="p-4 text-center text-muted text-sm">No chats available</div>
-                  ` : subscribedChats.map(chat => {
-                    const chatId = chat.id || chat.chat_id;
-                    const chatName = chat.name || chat.chat_name || chatId;
-                    const userId = chat.user_id || '';
-                    const platform = chat.type || chat.platform || 'Group';
-                    return `
-                      <label class="flex items-center gap-3 p-3 cursor-pointer hover:bg-tertiary" style="border-bottom: 1px solid var(--border-subtle);" onclick="event.stopPropagation()">
-                        <input type="checkbox" data-user-id="${userId}" data-chat-id="${chatId}" onchange="toggleRecipient('${_escAttr(userId)}', '${_escAttr(chatId)}', '${_escAttr(chatName)}', '${_escAttr(platform)}')" style="width: 18px; height: 18px; accent-color: var(--accent-primary);">
-                        <div class="flex-1">
-                          <div class="text-sm font-medium">${chatName}</div>
-                          <div class="text-xs text-muted">${platform}</div>
-                        </div>
-                      </label>
-                    `;
-                  }).join('')}
+                  <!-- Content will be rendered by renderRecipientDropdown() -->
                 </div>
               </div>
               
@@ -766,7 +821,12 @@ function clearForm() {
   AppState.selectedCloudFilesForScheduler = [];
   renderFileList();
   renderRecipientsList();
-  updateRecipientCheckboxes();
+  // Re-render dropdown to update checkboxes
+  const searchInput = document.getElementById('recipient-search-input');
+  if (searchInput) {
+    searchInput.value = '';
+    filterRecipients('');
+  }
   updateCharCount();
   showNotification('Form cleared', 'info');
 }
@@ -787,8 +847,23 @@ if (typeof window !== 'undefined') {
   // Multi-recipient functions
   window.toggleRecipient = toggleRecipient;
   window.removeRecipient = removeRecipient;
-  window.toggleRecipientDropdown = toggleRecipientDropdown;
   window.selectAllRecipients = selectAllRecipients;
   window.clearAllRecipients = clearAllRecipients;
   window.renderRecipientsList = renderRecipientsList;
+  window.filterRecipients = filterRecipients;
+  window.renderRecipientDropdown = renderRecipientDropdown;
+  window.hideRecipientDropdown = hideRecipientDropdown;
+  window.showRecipientDropdown = showRecipientDropdown;
 }
+
+// Close dropdown when clicking outside
+document.addEventListener('click', (e) => {
+  const searchInput = document.getElementById('recipient-search-input');
+  const dropdown = document.getElementById('recipient-dropdown');
+  
+  if (searchInput && dropdown && 
+      !searchInput.contains(e.target) && 
+      !dropdown.contains(e.target)) {
+    hideRecipientDropdown();
+  }
+});
