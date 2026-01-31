@@ -375,7 +375,9 @@ function renderDashboard() {
           tone: nextPending ? 'purple' : 'blue',
           title: 'Next Message',
           value: nextPending
-            ? (nextPending.recipient || (nextPending.target_user_id ? (typeof getRecipientName === 'function' ? getRecipientName(nextPending.target_user_id) : nextPending.target_user_id) : 'Scheduled'))
+            ? (nextPending.recipients && Array.isArray(nextPending.recipients) 
+                ? nextPending.recipients.join(', ') 
+                : (nextPending.recipient || (nextPending.target_user_id ? (typeof getRecipientName === 'function' ? getRecipientName(nextPending.target_user_id) : nextPending.target_user_id) : 'Scheduled')))
             : '—',
           meta: nextMeta,
           icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

@@ -826,35 +826,46 @@ async function submitScheduledMessage() {
       'info'
     );
 
-    // Send to all selected recipients × all selected days
-    let successCount = 0;
-    let failCount = 0;
+   // Send to all selected recipients × all selected days (BUNDLED PER DAY)
+let successCount = 0;
+let failCount = 0;
 
-    for (const recipient of selectedRecipients) {
-      for (const scheduledTimestamp of scheduledTimestamps) {
-        try {
-          await AzureVMAPI.scheduleMessage(recipient.userId, content, scheduledTimestamp, allFiles);
+const attempted = selectedRecipients.length * scheduledTimestamps.length;
 
-          AppState.scheduledMessages = AppState.scheduledMessages || [];
-          AppState.scheduledMessages.push({
-            id: generateId(),
-            recipient: recipient.chatName,
-            message_content: content,
-            scheduled_time: scheduledTimestamp,
-            target_user_id: recipient.userId,
-            status: 'pending',
-            files: allFiles.map(f => ({ name: f.name, size: f.size }))
-          });
+for (const scheduledTimestamp of scheduledTimestamps) {
+  const successfulRecipientsForThisDay = [];
 
-          successCount++;
-        } catch (err) {
-          console.error(`Failed to schedule for ${recipient.chatName} at ${scheduledTimestamp}:`, err);
-          failCount++;
-        }
-      }
+  for (const recipient of selectedRecipients) {
+    try {
+      await AzureVMAPI.scheduleMessage(recipient.userId, content, scheduledTimestamp, allFiles);
+
+      successfulRecipientsForThisDay.push(recipient);
+      successCount++;
+    } catch (err) {
+      console.error(`Failed to schedule for ${recipient.chatName} at ${scheduledTimestamp}:`, err);
+      failCount++;
     }
+  }
 
-    const attempted = selectedRecipients.length * scheduledTimestamps.length;
+  // Add ONE bundled message entry for this day, containing all successful recipients
+  if (successfulRecipientsForThisDay.length > 0) {
+    AppState.scheduledMessages = AppState.scheduledMessages || [];
+    AppState.scheduledMessages.push({
+      id: generateId(),
+
+      // bundled recipients
+      recipients: successfulRecipientsForThisDay.map(r => r.chatName),
+      target_user_ids: successfulRecipientsForThisDay.map(r => r.userId),
+
+      message_content: content,
+      scheduled_time: scheduledTimestamp,
+      status: 'pending',
+
+      files: allFiles.map(f => ({ name: f.name, size: f.size }))
+    });
+  }
+}
+
     const fileCountMsg = allFiles.length > 0 ? ` with ${allFiles.length} file(s)` : '';
 
     if (failCount === 0) {
